@@ -1,0 +1,7 @@
+#ID	goname	hierarchy	num_prots
+16491	oxidoreductase activity	f	7545
+15267	channel activity	f	412
+15643	toxic substance binding	f	29
+97351	toxin-antitoxin pair type II binding	f	13
+34480	phosphatidylcholine phospholipase C activity	f	18
+42254	ribosome biogenesis
