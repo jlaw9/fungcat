@@ -1,3 +1,10 @@
+# emacs and vim temp files
+*~
+\#*#
+.*.sw*
+# flymake files are written by emacs to check python syntax 
+*_flymake.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
