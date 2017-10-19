@@ -3,10 +3,33 @@ This is a modest collection of file utilities we regularly use.
 """
 
 import os
+import subprocess
+import sys
+
+
+def runCommand(command, show_output=True, quit=True, error_message=""):
+    """ Small function to handle running bash subprocess
+    *command*: The bash command to run on the system
+    *show_output*: Default True. If False, output of the command will be hidden
+    *quit*: Default True. If False, the script will not quit if the subprocess has an error
+    *error_message*: Error message to show if the command failed
+    """
+    if show_output:
+        print "Running:", command
+    try:
+        if show_output:
+            subprocess.check_call(command.split())
+        else:
+            subprocess.check_call(command.split(), stdout=open('/dev/null', 'w'), stderr=open('/dev/null', 'w'))
+    except subprocess.CalledProcessError:
+        if error_message:
+            sys.stderr.write(error_message)
+        if quit:
+            raise
 
 
 def checkDir(directory):
-    """ analagous to mkdir -p directory from the command line
+    """ Analagous to mkdir -p directory from the command line
     """
     if not os.path.isdir(directory):
         print("Dir %s doesn't exist. Creating it" % (directory))
