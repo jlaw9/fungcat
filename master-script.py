@@ -6,13 +6,9 @@ from optparse import OptionParser
 import os
 import sys
 import gzip
-#import subprocess
-#import networkx as nx
 from tqdm import tqdm
-import utilsPoirel as utils
-import toxcast_utils as t_utils
-sys.path.append("src")
-import fungcat_settings as f_settings
+import src.utils.file_utils as utils
+import src.fungcat_settings as f_settings
 
 
 # setup global variables
@@ -47,7 +43,7 @@ def setup_inputs(selected_strains):
 
     if len(strains_to_split) > 0:
         print "Splitting GO annotations to each of the following %d strains: %s" % (len(strains_to_split), ', '.join(strains_to_split))
-        t_utils.checkDir(f_settings.GOA_TAXON_DIR)
+        utils.checkDir(f_settings.GOA_TAXON_DIR)
         strains_to_split_file = "%s/strains_to_split.txt" % (f_settings.GOA_TAXON_DIR)
         with open(strains_to_split_file, 'w') as out:
             out.write('\n'.join(strains_to_split))
@@ -57,7 +53,7 @@ def setup_inputs(selected_strains):
                 " --goa-annotations %s " % (f_settings.GOA_FILE) + \
                 " --out-dir %s " % (f_settings.GOA_TAXON_DIR) + \
                 " --selected-strains %s " % (strains_to_split_file) 
-        t_utils.runCommand(command)
+        utils.runCommand(command)
 
     # also propogate direct annotations up the DAG for each of the strains
     print "Propogating direct annotations up the DAG for each of the %d strains" % (len(strains_to_split))
@@ -69,7 +65,7 @@ def setup_inputs(selected_strains):
                 " --output-file %s " % (f_settings.FUN_FILE % (strain, strain)) + \
                 " --transitive-closure " + \
                 " --direction-transitive-closure up "
-        t_utils.runCommand(command)
+        utils.runCommand(command)
 
 
 def parse_args():

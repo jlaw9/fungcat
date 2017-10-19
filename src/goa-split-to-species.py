@@ -6,10 +6,8 @@ from optparse import OptionParser
 import os
 import sys
 import gzip
-#import subprocess
-#import networkx as nx
 from tqdm import tqdm
-import utilsPoirel as utils
+import utils.file_utils as utils
 
 
 def open_file_to_write(out_file, out_handle, for_gain=False):
