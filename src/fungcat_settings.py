@@ -1,5 +1,46 @@
 # file to contain settings used by multiple scripts
 
+# Ouputs Structure:
+# ouputs - version1 - all - method 1 - results.txt
+#       |          |      - method 2 - results.txt
+#       |           - species1
+#       |
+#        - version2
+
+ALLOWEDVERSIONS = [
+    "2017_10-seq-sim",
+    "2017_10-string",
+    "2017_10-seq-sim-string",
+    ]
+
+SEQ_SIM_NETWORKS = {
+    "2017_10-seq-sim": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    }
+
+NETWORK_VERSION_INPUTS = {
+        "2017_10-seq-sim": ['SEQ_SIM'],
+        "2017_10-seq-sim-string": ['SEQ_SIM', 'STRING'],
+        "2017_10-string": ['STRING'],
+    }
+
+ALGORITHM_OPTIONS = {
+    "local-ova": "--ova local",
+    "local-ovn": "--ovn local",
+    #"fun-flow-ova": "--ova functional-flow",
+    "fun-flow-ovn": "--ovn functional-flow",
+    "sinksource-ova": "--ova sinksource",
+    "sinksource-ovn": "--ovn sinksource",
+    "genemania-ova": "--ova genemania",
+}
+
+#STRING_NETWORKS = {
+#    "2017_10-string": ""
+#    "2017_10-seq-sim-string": ""
+#    }
+# STRING networks are in the individual taxon dirs
+#STRING_TAXON_UNIPROT = "%s/%%s/%%s-uniprot-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
+
 TAX_TO_NAME = {
     "Neisseria gonorrhoeae FA 1090"                             : "242231",
     "Peptoclostridium difficile / Clostridioides difficile 630" : "272563",
@@ -37,6 +78,8 @@ GOA_TAXON_FILE = "%s/%%s/%%s-goa.gaf" % (GOA_TAXON_DIR)
 # file containing annotations propogated up the GO DAG hierarchy
 # also formatted to be used as input for GAIN
 FUN_FILE = "%s/%%s/%%s-goa-all-fun.txt" % (GOA_TAXON_DIR)
+# file containing all annotations for the 19 species
+GOA_ALL_FUN_FILE = "%s/all-taxon-goa.txt" % (GOA_TAXON_DIR)
 
 # STRING directories and file templates
 STRING_DIR = "/data/inputs/string"
@@ -56,5 +99,24 @@ STRING_TAXON_FILE = "%s/%%s/%%s.links.full.v10.5-%%d.txt" % (STRING_TAXON_DIR)
 STRING_TAXON_UNIPROT = "%s/%%s/%%s-uniprot-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
 
 # code directory
-#BIORITHM = "/home/jeffl/src/c++/biorithm/trunk"
-BIORITHM = "/home/jeffl/src/c++/biorithm-ubuntu14/trunk"
+BIORITHM = "/home/jeffl/src/c++/biorithm/trunk"
+BIORITHM_ubuntu14 = "/home/jeffl/src/c++/biorithm-ubuntu14/trunk"
+
+VERSION = ''
+INPUTSPREFIX = ''
+RESULTSPREFIX = ''
+# processed network file for each version
+NETWORK = "inputs/%s/%s-net.txt"
+
+
+def set_version(version):
+    global VERSION, INPUTSPREFIX, RESULTSPREFIX, NETWORK
+
+    VERSION = version
+    print "Using version %s" % (VERSION)
+
+    INPUTSPREFIX = "inputs/%s" % VERSION
+    RESULTSPREFIX = "outputs/%s" % VERSION
+    NETWORK = NETWORK % (VERSION, VERSION)
+
+    return INPUTSPREFIX, RESULTSPREFIX, NETWORK
