@@ -15,7 +15,7 @@ def runCommand(command, show_output=True, quit=True, error_message=""):
     *error_message*: Error message to show if the command failed
     """
     if show_output:
-        print "Running:", command
+        print("Running:", command)
     try:
         if show_output:
             subprocess.check_call(command.split())
