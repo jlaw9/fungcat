@@ -1,7 +1,9 @@
 import unittest
 import math
-import precision_recall
+import io 
+import os
 
+import precision_recall
 
 class TestComputePrecisionRecall(unittest.TestCase):
 
@@ -41,6 +43,31 @@ class TestComputePrecisionRecall(unittest.TestCase):
                 math.isclose(pair[0][0], pair[1][0], abs_tol=0.0001))
             self.assertTrue(
                 math.isclose(pair[0][1], pair[1][1], abs_tol=0.0001))
+
+
+class TestPrecisionRecallIO(unittest.TestCase):
+    
+    def test_write_precision_recall_values(self):
+        points = [(1,0), (1, .3333), (.6666, .6666), (.6, 1)]
+
+        output = io.StringIO()
+        precision_recall.write_precision_recall_values(output, points)
+
+        expected = "1,0%s1,0.3333%s0.6666,0.6666%s0.6,1%s" % \
+            (os.linesep, os.linesep, os.linesep, os.linesep)
+
+        self.assertEqual(expected, output.getvalue())
+
+
+    def test_read_precision_recall_values(self):
+        infile = io.StringIO("1,0%s1,0.3333%s0.6666,0.6666%s0.6,1%s" % 
+            (os.linesep, os.linesep, os.linesep, os.linesep))
+
+        expected = [(1,0), (1, .3333), (.6666, .6666), (.6, 1)]
+
+        points = precision_recall.read_precision_recall_values(infile)
+
+        self.assertEqual(points, expected)
 
 
 if __name__ == '__main__':
