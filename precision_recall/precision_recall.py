@@ -1,7 +1,30 @@
+import os
+import csv
 import random
-
 import matplotlib.pyplot as plt
 import seaborn
+
+
+def write_precision_recall_values(handle, points):
+    """
+    handle: file handle
+    points: the list of points returned by the compute functions
+    """
+
+    writer = csv.writer(handle, lineterminator=os.linesep)
+    for precision, recall in points:
+        writer.writerow([precision, recall])
+
+
+def read_precision_recall_values(handle):
+    points = []
+    reader = csv.reader(handle)
+    for row in reader:
+        precision = float(row[0])
+        recall = float(row[1])
+        points.append((precision, recall))
+
+    return points
 
 
 def compute_precision_recall_point(retrieved, relevant):
@@ -53,29 +76,31 @@ def compute_precision_recall_curve(ranked_items, relevant):
     return points
 
 
-def compute_precision_recall_curve_subsample_negatives(
-        ranked_items, relevant, negatives, ratio=50):
-    """
-    negatives: set of all possible negatives
-    ratio: subsample x * sizeof(negatives)
-    """
-
-    retrieved = set()
-    points = []
-    points.append((1, 0))
-
+def subsample_negatives(negatives, positives, ratio=50):
     subsample = None
 
-    # Subsample negatives
-    if len(negatives) <= len(relevant) * ratio:
+    if len(negatives) <= len(positives) * ratio:
         print("Warning: not enough negatives to meet desired ratio!")
         subsample = negatives
     else:
         neg_list = list(negatives)
         subsample = set(random.sample(negatives, len(relevant) * ratio))
 
+    return subsample
+
+
+def compute_precision_recall_curve_negatives(
+        ranked_items, relevant, negatives):
+    """
+    Compute precision/recall given an explicit set of negatives
+    """
+
     # Define universe of interactions we care about
-    universe = relevant.union(subsample)
+    universe = relevant.union(negatives)
+
+    retrieved = set()
+    points = []
+    points.append((1, 0))
 
     # Run calculation, only caring about items in universe above 
     for items_set in ranked_items:
@@ -93,6 +118,19 @@ def compute_precision_recall_curve_subsample_negatives(
             points.append(compute_precision_recall_point(retrieved, relevant))
         
     return points
+
+
+def compute_precision_recall_curve_subsample_negatives(
+        ranked_items, relevant, negatives, ratio=50):
+    """
+    negatives: set of all possible negatives
+    ratio: subsample x * sizeof(negatives)
+    """
+
+    subsample = subsample_negatives(negatives, relvant, ratio) 
+
+    return compute_precision_recall_curve_negatives(
+        ranked_items, relevant, subsample)
 
 
 def init_precision_recall_figure(): 

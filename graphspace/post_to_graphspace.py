@@ -2,7 +2,7 @@
 
 # code to post toxcast results to graphspace
 
-print("Importing Libraries")
+#print("Importing Libraries")
 
 from optparse import OptionParser
 from graphspace_python.api.client import GraphSpace
@@ -11,10 +11,6 @@ from graphspace_python.graphs.classes.gsgraph import GSGraph
 #import networkx as nx
 import utils.file_utils as utils
 import sys
-
-
-# mapping from uniprot ID gene name (including family nodes)
-uniprot_to_gene = {}
 
 
 def main(args):
@@ -28,9 +24,9 @@ def main(args):
     lines = utils.readColumns(opts.edges,1,2)
     prededges = set(lines)
 
-    global uniprot_to_gene
+    node_labels = {} 
     if opts.mapping_file is not None:
-        uniprot_to_gene = utils.readDict(opts.mapping_file, 1, 2)
+        node_labels = utils.readDict(opts.mapping_file, 1, 2)
 
     # get attributes of nodes and edges from the graph_attr file
     graph_attr = {}
@@ -41,11 +37,10 @@ def main(args):
     if opts.net is not None:
         # add the edge weight from the network to attr_desc which will be used for the popup
         edge_weights = {(u,v):float(w) for u,v,w in utils.readColumns(opts.net,1,2,3)}
-        for u,v in prededges:
-            edge_str = "%s-%s" % (u,v)
-            if edge_str not in attr_desc:
-                attr_desc[edge_str] = {}
-            attr_desc[edge_str]["edge weight"] = edge_weights[(u,v)]
+        for e in prededges:
+            if e not in attr_desc:
+                attr_desc[e] = {}
+            attr_desc[e]["edge weight"] = edge_weights[e]
 
     # set the width of the edges by the network weight
     if opts.net is not None and opts.set_edge_width:
@@ -58,11 +53,10 @@ def main(args):
     for n in prednodes:
         popups[n] = buildNodePopup(n, attr_val=attr_desc)
     for u,v in prededges:
-        edgestr = "%s-%s" % (u,v)
-        popups[edgestr] = buildEdgePopup(u,v, attr_val=attr_desc)
+        popups[(u,v)] = buildEdgePopup(u,v, node_labels=node_labels, attr_val=attr_desc)
 
     # Now post to graphspace!
-    G = constructGraph(prededges, graph_attr=graph_attr, popups=popups)
+    G = constructGraph(prededges, node_labels=node_labels, graph_attr=graph_attr, popups=popups)
 
     # TODO add an option to build the 'graph information' tab legend/info
     # build the 'Graph Information' metadata
@@ -108,11 +102,18 @@ def readGraphAttr(graph_attr_file):
     lines = utils.readColumns(graph_attr_file, 1,2,3,4)
     print("\tread %d lines" % (len(lines)))
     # reverse the lines so the pathways at the top of the file will overwrite the pathways at the bottom
-    for style, style_attr, prots, desc in lines[::-1]:
-        for prot in prots.split('|'):
-            if prot not in graph_attr:
-                graph_attr[prot] = {}
-            graph_attr[prot][style] = style_attr
+    for style, style_attr, items, desc in lines[::-1]:
+        for item in items.split('|'):
+            # if this is an edge, then split it by the '-'
+            if len(item.split('-')) == 1:
+                item = tuple(item.split('-'))
+            elif len(item.split('-')) > 1:
+                print "Error: '-' found in node name for edge: %s. '-' is used to split an edge." % (item)
+                sys.exit(1)
+
+            if item not in graph_attr:
+                graph_attr[item] = {}
+            graph_attr[item][style] = style_attr
         attr_desc[(style, style_attr)] = desc
         #graph_attributes[group_number] = {"style": style, "style_attr": style_attr, "prots": prots.split(','), "desc":desc}
 
@@ -128,15 +129,12 @@ def set_edge_width(edges, edge_weights, graph_attr, a=1, b=12):
     """
     # TODO make this into a function
     #def normalize_between_vals(values, a, b, max_val=None, min_val=None):
-    max_weight = max([edge_weights[e] for e in edge_weights])
-    min_weight = min([edge_weights[e] for e in edge_weights])
+    max_weight = max(edge_weights.values())
+    min_weight = min(edge_weights.values())
     print("edge max_weight = %s, min_weight = %s" % (max_weight, min_weight))
-    for u,v in edges:
-        normalized_weight = (b-a) * (float(edge_weights[(u,v)] - min_weight) / float(max_weight - min_weight)) + a
-        edge_str = "%s-%s" % (u,v)
-        if edge_str not in graph_attr:
-            graph_attr[edge_str] = {}
-        graph_attr[edge_str]['width'] = normalized_weight
+    for e in edges:
+        normalized_weight = (b-a) * (float(edge_weights[e] - min_weight) / float(max_weight - min_weight)) + a
+        graph_attr[e]['width'] = normalized_weight
 
     return graph_attr
 
@@ -174,7 +172,7 @@ def post_graph_to_graphspace(G, username, password, graph_name, apply_layout=Non
     # now apply the layout if applicable
     if layout is not None:
         # set the x and y position of each node in the updated graph to the x and y positions of the layout you created
-        print("Setting the x and y coordinates of each node to the positions in %s" % layout_name))
+        print("Setting the x and y coordinates of each node to the positions in %s" % (layout_name))
         for node, positions in layout.positions_json.items():
             G.set_node_position(node_name=node, x=positions['x'], y=positions['y'])
 
@@ -201,7 +199,7 @@ def post_graph_to_graphspace(G, username, password, graph_name, apply_layout=Non
         gs.share_graph(graph=gs_graph, group=group)
 
 
-def constructGraph(edges, graph_attr={}, popups={}):
+def constructGraph(edges, node_labels={}, graph_attr={}, popups={}, edge_dirs={}):
     """
     Posts the set of edges to graphspace
 
@@ -209,7 +207,9 @@ def constructGraph(edges, graph_attr={}, popups={}):
     *graph_attr*: optional dictionary containing styles for nodes and edges. For example:
         n1: {color: red, border_width: 10}
         n1-n2: {line-color: blue}
+    *node_labels*: optional dictionary containing the desired label for each node
     *popups*: optional dictionary containing html popups for nodes and edges 
+    *edge_dirs*: optional dictionary specifying if an edge is directed (True) or not (False). Default is not directed (False)
 
     returns the constructed GSGraph
     """
@@ -222,28 +222,12 @@ def constructGraph(edges, graph_attr={}, popups={}):
     # GSGraph does not allow adding multiple nodes with the same name.
     # Use this set to make sure each node has a different gene name.
     # if the gene name is the same, then use the gene + uniprot ID instead
-    genes_added = set()
+    labels_added = set()
     # set of parent nodes to add to the graph
-    parents_to_add = {}
+    #parents_to_add = {}
 
     ## add GraphSpace/Cytoscape.js attributes to all nodes.
     for n in prednodes:
-        #default is gray circle
-        #node_type = 'default'
-
-        if n not in graph_attr:
-            graph_attr[n] = {}
-
-        # set the name of the node to be the gene name and add the k to the label
-        gene_name = uniprot_to_gene.pop(n,n)
-
-        # if this gene name node was already added, then add another node with the name: gene-uniprot
-        if gene_name in genes_added:
-            gene_name = "%s-%s" % (gene_name, n)
-            uniprot_to_gene[n] = gene_name
-            #continue
-        genes_added.add(gene_name)
-
         attr_dict = {}
         # TODO add the parent nodes functionality back
         # See the src/python/graphspace/trunk/graphspace-human/post_to_new_graphspace_evidence.py script 
@@ -256,12 +240,18 @@ def constructGraph(edges, graph_attr={}, popups={}):
 
         # if there is no popup, then have the popup just be the node name
         node_popup = popups.pop(n, n)
+        # leave the gene name as the node ID if there are no node_labels provided
+        node_label = node_labels.pop(n,n)
+        # if this gene name node was already added, then add another node with the name: gene-uniprot
+        if node_label in labels_added:
+            node_label = "%s-%s" % (node_label, n)
+        node_labels[n] = node_label
+        labels_added.add(node_label)
 
-        label = gene_name
-
-        G.add_node(gene_name, attr_dict=attr_dict, popup=node_popup, label=label)
+        G.add_node(node_label, attr_dict=attr_dict, popup=node_popup, label=node_label)
 
         attr_dict = {}
+        # these are the default values I like. Any styles set in the graph_attr dictionary will overwrite these defaults
         shape = 'ellipse'
         color = '#D8D8D8'  # grey - background-color
         border_style = 'solid'
@@ -289,34 +279,32 @@ def constructGraph(edges, graph_attr={}, popups={}):
         # I updated the bubble function in graphspace_python gsgraph.py so it wouldn't overwrite the border color.
         bubble = color if bubble is None else bubble
 
-        G.add_node_style(gene_name, shape=shape, attr_dict=attr_dict, color=color, width=width, height=height,
+        G.add_node_style(node_label, shape=shape, attr_dict=attr_dict, color=color, width=width, height=height,
                          style=border_style, border_color=border_color, border_width=border_width, bubble=bubble)
 
     # Add all of the edges and their Graphspace/Cytoscape.js attributes
     for (u,v) in edges:
-
-        gene_name_u = uniprot_to_gene.pop(u,u)
-        gene_name_v = uniprot_to_gene.pop(v,v)
-        edge_str = "%s-%s" % (u,v)
-
-        #edge_popup = getEdgeAnnotation(u,v, evidence, k=k_value, family_ppi_evidence=family_ppi_evidence)
         # if there is no popup, then have the popup just be the edge name
-        edge_popup = popups.pop(edge_str, edge_str)
-        G.add_edge(gene_name_u,gene_name_v,directed=True,popup=edge_popup)
+        edge_popup = popups.pop((u,v), "%s-%s" % (u,v))
+        directed = edge_dirs.pop((u,v), False)
+        # TODO directed vs undirected edges into an option
+        G.add_edge(node_labels[u],node_labels[v],directed=directed,popup=edge_popup)
 
         attr_dict = {}
         arrow_shape = 'triangle'  # target-arrow-shape
         color = "#D8D8D8"  # line-color
         edge_style = 'solid'  # line-style
         width = 1.5  # width
-        if edge_str in graph_attr:
+        if (u,v) in graph_attr:
             # any attribute can be set in the graph_attr dict and the defaults will be overwritten
-            for style in graph_attr[edge_str]:
-                attr_dict[style] = graph_attr[edge_str][style]
+            for style in graph_attr[(u,v)]:
+                attr_dict[style] = graph_attr[(u,v)][style]
+            if 'color' in graph_attr[(u,v)]:
+                color = graph_attr[(u,v)]['color']
 
         #print(width, color, arrow_shape, edge_style)
-        G.add_edge_style(gene_name_u, gene_name_v, attr_dict=attr_dict,
-                         directed=True, color=color, width=width, arrow_shape=arrow_shape, edge_style=edge_style)
+        G.add_edge_style(node_labels[u], node_labels[v], attr_dict=attr_dict,
+                         directed=directed, color=color, width=width, arrow_shape=arrow_shape, edge_style=edge_style)
     return G
 
 
@@ -357,28 +345,27 @@ def buildNodePopup(n, uniprot=True, attr_val=None):
     return htmlstring
 
 
-def buildEdgePopup(t, h, attr_val=None):
+def buildEdgePopup(u, v, node_labels={}, attr_val=None):
     """
     Builds the edge html for the edge popup.
 
-    *t*: tail of edge
-    *h*: head of edge
+    *u*: tail of edge
+    *v*: head of edge
     *attr_val*: dict containing an attribute name and value for nodes
 
     *returns* HTML popup string.
     """
 
-    edge_str = "%s-%s" % (t,h)
     htmlstring = '' 
-    htmlstring +='<b>%s - %s</b></br>'%(t,h)
-    if t in uniprot_to_gene and h in uniprot_to_gene:
-        htmlstring +='<b>%s - %s</b></br>'%(uniprot_to_gene[t], uniprot_to_gene[h])
+    htmlstring +='<b>%s - %s</b></br>'%(u,v)
+    if u in node_labels and v in node_labels:
+        htmlstring +='<b>%s - %s</b></br>'%(node_labels[u], node_labels[v])
 
     # TODO design a better method to build the popups
-    if attr_val is not None and edge_str in attr_val:
+    if attr_val is not None and (u,v) in attr_val:
         htmlstring += "<hr />"
         # now add all of the specified edge annotations
-        for attr, val in attr_val[edge_str].items():
+        for attr, val in attr_val[(u,v)].items():
             htmlstring += "<b>%s</b>: %s</br>" % (attr, val)
 
     return htmlstring
@@ -428,8 +415,8 @@ def parseArgs(args):
     parser.add_option('', '--tag', type='string', metavar='STR', action="append",
                       help='Tag to put on the graph. Can list multiple tags (for example --tag tag1 --tag tag2)')
     parser.add_option('', '--apply-layout', type='string', metavar='STR', 
-                      help='Specify the name of a graph from which to apply a layout. Layout name specified by the --layout-name option. ' + \
-                              'If left blank and the graph is being updated, it will attempt to apply the --layout-name layout.')
+                      help='Specify the name of a graph from which to apply a layout. Layout name specified by the --layout-name option. ' + 
+                      'If left blank and the graph is being updated, it will attempt to apply the --layout-name layout.')
     parser.add_option('', '--layout-name', type='string', metavar='STR', default='layout1',
                       help="Name of the layout of the graph specified by the --apply-layout option to apply. Default: 'layout1'")
     # TODO implement parent nodes
