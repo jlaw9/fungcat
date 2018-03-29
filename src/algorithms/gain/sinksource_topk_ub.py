@@ -7,13 +7,14 @@
 import sys
 import time
 import alg_utils
+import operator
 # expects python 3 and networkx 2
 import networkx as nx
 import numpy as np
 import sinksource_ripple
 
 
-def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, eps=None):
+def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, deltaUBLB=None):
     """
     I added the *a* (alpha) parameter so that I can still run SinkSourcePlus using the
     UB method of SinkSource. When *a*=1, SinkSource is not affected by it.
@@ -27,19 +28,19 @@ def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, eps=No
     H, f = sinksource_ripple.fixNodes(H, positives, a=a, f={}, UBs={}, LBs={})
 
     if negatives is not None:
-        print("\t%d positives, %d negatives, k=%d, t=%d, s=%d, a=%s, eps=%s" \
-                % (len(positives), len(negatives), k, t, s, str(a), str(eps)))
+        print("\t%d positives, %d negatives, k=%d, t=%d, s=%d, a=%s, deltaUBLB=%s" \
+                % (len(positives), len(negatives), k, t, s, str(a), str(deltaUBLB)))
         # also remove the negative nodes from the graph
         # assuming their scores are fixed at 0 which means they don't contribute any score to neighbors
         H.remove_nodes_from(negatives)
         for n in negatives:
             f.pop(n)
     else:
-        print("\t%d positives, k=%d, t=%d, s=%d, a=%s, eps=%s" \
-                % (len(positives), k, t, s, str(a), str(eps)))
+        print("\t%d positives, k=%d, t=%d, s=%d, a=%s, deltaUBLB=%s" \
+                % (len(positives), k, t, s, str(a), str(deltaUBLB)))
     # Remove nodes that cannot be reached from a positive node
     # as their score will always be 0
-    nonreachable_nodes = nonReachableNodes(H, [n for n in f if f[n] > 0])
+    nonreachable_nodes = alg_utils.nonReachableNodes(H, [n for n in f if f[n] > 0])
     if len(nonreachable_nodes) > 0:
         print("\t%d nodes not reachable from a positive. Removing them from the graph" % (len(nonreachable_nodes)))
     H.remove_nodes_from(nonreachable_nodes)
@@ -59,38 +60,52 @@ def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, eps=No
 #
 #    f = new_f
 
-    R, LBs, time, iters = SinkSourceTopK(H, f, k=k, t=t, s=s, a=a, eps=eps)
+    # Section for computing topk on each connected component
+#    overall_time = 0
+#    all_LBs = {}
+#    k_score = 0
+#    # now split the graph into connected components (ccs), and find the top-k for each component.
+#    # TODO If the UB of the nodes in the new connected component are < LB for the top-k from previous CC, then stop
+#    ccs = list(nx.weakly_connected_components(H))
+#    print("%d connected components in H" % (len(ccs)))
+#    # TODO
+#    # find the cc with the node with the largest influence from positive nodes, and start there
+#    while len(ccs) > 0:
+#        max_f = max(f.items(), key=operator.itemgetter(1))[0]
+#        for i, c in enumerate(ccs):
+#            if max_f in c:
+#                break
+#    #for c in ccs:
+#        print("Size of connected component with largest f value: %d " % (len(c)))
+#
+#        del ccs[i]
+#        fc = {n:f[n] for n in f.keys() & c}
+#        for n in fc:
+#            f.pop(n)
+#        R, LBs, time, iters, curr_k_score, len_N = SinkSourceTopK(H.subgraph(c), fc, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB, k_score=k_score)
+#        # only update the k_score if the top-k in the connected component actually gave us k nodes
+#        # many ccs are only a single node
+#        if len(R) >= k:
+#            k_score = curr_k_score
+#        all_LBs.update(LBs)
+#        #k_score = all_LBs[sorted(all_LBs, key=all_LBs.get, reverse=True)[k-1]]
+#        overall_time += time
+#
+##    R = [int2node[n] for n in R]
+##    LBs = {int2node[i]: LBs[i] for i in range(len(LBs))}
+#    # to get the top-k nodes, sort the LBs which have been updated for each connected component
+#    R = sorted(all_LBs, key=all_LBs.get, reverse=True)[:k]
 
-#    R = [int2node[n] for n in R]
-#    LBs = {int2node[i]: LBs[i] for i in range(len(LBs))}
+    R, LBs, overall_time, iters, k_score, len_N = SinkSourceTopK(H, f, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB)
 
-    return R, LBs, time, iters
-
-
-def nonReachableNodes(G, nodes):
-    """
-    Remove nodes that cannot be reached from a positive node
-    as their score will always be 0
-    """
-    curr_nodes = nodes
-    curr_neighbors = set()
-    not_visited = set(G.nodes())
-    # BFS to every node reachable from a positive
-    while len(curr_nodes) > 0:
-        # continue iterating until there are no more nodes
-        for u in curr_nodes:
-            curr_neighbors.update(set(G.neighbors(u)) & not_visited)
-        not_visited.difference_update(curr_nodes)
-        curr_nodes = curr_neighbors
-        curr_neighbors = set()
-    return not_visited
+    return R, all_LBs, overall_time, iters, len_N
 
 
-def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, eps=0.00001):
+def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
     """
     *G*: Row-normalized Graph with only unknowns
     *f*: initial vector f of amount of score received from positive nodes
-    *eps*: cutoff for UB-LB diff to fix a node's score
+    *deltaUBLB*: cutoff for UB-LB diff to fix a node's score. If none, then node's scores will not be fixed
     *returns*: The set of top-k nodes, and current scores for all nodes
     """
     # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
@@ -119,7 +134,7 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, eps=0.00001):
     start_time = time.time()
 
     # iterate until the top-k are attained
-    while len(R) > k:
+    while len(R) > k or num_iters < 1:
         print("\tnum_iters: %d, |N|: %d, |B|: %d, |R|: %d" % (num_iters, len(N), len(B), len(R)))
         num_iters += 1
         if len(B) > s:
@@ -204,10 +219,15 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, eps=0.00001):
         # and if there are, remove them from R.
         # get the score of the node with the kth largest score
         R_LBs = {n:LBs[n] for n in R}
-        #R_LBs = {n:LBs[n] for n in N}
+        #R_LBs = {n:LBs[n] for n in N | R}
         sorted_LBs = sorted(R_LBs, key=R_LBs.get, reverse=True)
         #print(sorted_LBs[:k+20])
-        k_score = LBs[sorted_LBs[k-1]]
+        #k_score = LBs[sorted_LBs[k-1]]
+        # get the score of the node with the kth largest score
+        curr_k_score = LBs[sorted_LBs[k-1]]
+        if curr_k_score > k_score:
+            k_score = curr_k_score
+
         # update the UB of nodes in F to be the UB of the max boundary node
         if len(B) != 0:
             max_boundary_score = max([UBs[n] for n in N & B])
@@ -230,22 +250,28 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, eps=0.00001):
             if UBs[u] < k_score:
                 not_topk.add(u)
         R.difference_update(not_topk)
+        #for u in R | N:
+        #    if UBs[u] < k_score:
+        #        R.discard(u)
+        #    if UBs[u] > k_score:
+        #        R.add(u)
 
         # check to see if all of the UBs for the kth node and up are tied
         # if so, then we have the top-k results and can quit
         # only need to check this if we're close to the end (len(R) < len(N))
         if len(R) < len(N) and len(R) > k:
-            topk_plus_ties, R_UBs, k_UB = sinksourceplus_topk.checkTopKTies(LBs, UBs, R, k)
+            topk_plus_ties, R_UBs, k_UB = sinksource_ripple.checkTopKTies(LBs, UBs, R, k)
             if topk_plus_ties is True:
                 print("\t%d node UBs are tied with the kth UB %0.5f. Finished" % (len(R_UBs), k_UB))
                 break
 
-        if eps is not None:
-            G, f, N, B, LBs, UBs = sinksourceplus_topk.checkFixNodes(G, f, N, B, LBs, UBs, a=a, eps=eps)
+        if deltaUBLB is not None:
+            G, f, N, B, LBs, UBs = sinksource_ripple.checkFixNodes(G, f, N, B, LBs, UBs, a=a, deltaUBLB=deltaUBLB)
         #if len(R) - k < 10:
         #    print("; ".join(["%s: LB=%0.4f, UB=%0.4f" % (u, LBs[u], UBs[u]) for u in R]))
 
     total_time = time.time() - start_time
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
 
-    return R, LBs, total_time, num_iters
+    return R, LBs, total_time, num_iters, k_score, len(N)
+

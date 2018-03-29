@@ -30,3 +30,19 @@ def normalizeGraphEdgeWeights(G):
     return H
 
 
+def nonReachableNodes(G, nodes):
+    """
+    Returns a set of nodes that cannot be reached from the input set of (positive) nodes
+    """
+    curr_nodes = nodes
+    curr_neighbors = set()
+    not_visited = set(G.nodes())
+    # BFS to every node reachable from a positive
+    while len(curr_nodes) > 0:
+        # continue iterating until there are no more nodes
+        for u in curr_nodes:
+            curr_neighbors.update(set(G.neighbors(u)) & not_visited)
+        not_visited.difference_update(curr_nodes)
+        curr_nodes = curr_neighbors
+        curr_neighbors = set()
+    return not_visited
