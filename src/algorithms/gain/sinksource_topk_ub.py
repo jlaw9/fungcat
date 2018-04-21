@@ -10,11 +10,12 @@ import alg_utils
 import operator
 # expects python 3 and networkx 2
 import networkx as nx
-import numpy as np
+#import numpy as np
 import sinksource_ripple
 
 
-def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, deltaUBLB=None):
+def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, 
+        deltaUBLB=None, epsUB=0):
     """
     I added the *a* (alpha) parameter so that I can still run SinkSourcePlus using the
     UB method of SinkSource. When *a*=1, SinkSource is not affected by it.
@@ -96,39 +97,27 @@ def runSinkSourceTopK(G, positives, negatives=None, k=100, t=2, s=2, a=1, deltaU
 #    # to get the top-k nodes, sort the LBs which have been updated for each connected component
 #    R = sorted(all_LBs, key=all_LBs.get, reverse=True)[:k]
 
-    R, LBs, overall_time, iters, k_score, len_N = SinkSourceTopK(H, f, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB)
+    R, all_LBs, overall_time, iters, len_N = SinkSourceTopK(
+            H, f, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB,
+            epsUB=epsUB)
 
     return R, all_LBs, overall_time, iters, len_N
 
 
-def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
+def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0,
+        epsUB=0):
     """
     *G*: Row-normalized Graph with only unknowns
     *f*: initial vector f of amount of score received from positive nodes
     *deltaUBLB*: cutoff for UB-LB diff to fix a node's score. If none, then node's scores will not be fixed
+    *epsUB*: if all other nodes have a UB < the kth node's LB - epsUB, then return the top-k 
     *returns*: The set of top-k nodes, and current scores for all nodes
     """
     # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
-    R = set(G.nodes())
-    # initialize the vicinity to be empty
-    N = set()
-    # initialize F to be all nodes not in the vicinity
-    F = R - N
-    # initialize the boundary nodes to be those with a non-zero value in f.
-    # a node is a boundary node if it is in F with a score > 0,
-    # or it is a node in N with a neighbor in F
-    B = set([n for n in R if f[n] > 0])
-    #B = set([i for i in range(len(f)) if f[i] > 0])
-
-    # set the initial lower bound (LB) of each node to f or 0
-    # TODO no need to keep all nodes in the dictionary. Just the ones in B or N
-    LBs = f.copy()
-    # dictionary of scores at the previous iteration
-    prev_LBs = {n: 0 for n in R}
-    # list of Upper Bonds for each node, where nodes are integers
-    #UBs = [1 for n in R]
-    UBs = {n: 1 for n in R}
-    prev_UBs = {n: 1 for n in R}
+    R, N, F, B, LBs, prev_LBs, UBs = sinksource_ripple.initialize_sets(G, f)
+    # Upper Bonds for each node. They start at a because that's the maximum amount they can receive from positives
+    UBs = {n: a for n in R}
+    prev_UBs = {n: a for n in R}
 
     num_iters = 0
     start_time = time.time()
@@ -137,44 +126,13 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
     while len(R) > k or num_iters < 1:
         print("\tnum_iters: %d, |N|: %d, |B|: %d, |R|: %d" % (num_iters, len(N), len(B), len(R)))
         num_iters += 1
-        if len(B) > s:
-            # don't explore the high UB nodes until R is close to k
-            if len(N) < s:
-                B_LBs = {n:LBs[n] for n in B}
-                # get the top s highest score nodes in B
-                E = set(sorted(B_LBs, key=B_LBs.get, reverse=True)[:s])
-            else:
-                half_s = int(s/2)
-                # get s nodes in B with the largest current scores
-                B_LBs = {n:LBs[n] for n in B}
-                # get the top s highest score nodes in B
-                E = set(sorted(B_LBs, key=B_LBs.get, reverse=True)[:half_s])
-                # also get the nodes in N with the highest UBs
-                # to ensure that both UBs and LBs are converging
-                B_UBs = {n:UBs[n] for n in N & B}
-                E.update(set(sorted(B_UBs, key=B_UBs.get, reverse=True)[:half_s]))
-        else:
-            E = B.copy()
 
-        # add the nodes in E and their neighbors to N
-        for u in E:
-            N.add(u)
-        prev_size_N = len(N)
-        for u in E:
-            # add u's neighbors to N
-            for neighbor in G.neighbors(u):
-                #neighbors_added.add(neighbor)
-                N.add(neighbor)
+        # get the top s nodes in B with the highest LBs and UBs
+        E = get_s_nodes_in_B(N, B, LBs, UBs, s)
 
-        # update B by adding nodes in N that have have neighbors in F
-        for u in N:
-            if len(set(G.neighbors(u)) - N) > 0:
-                B.add(u)
-            elif u in B:
-                B.remove(u)
+        # Update nodes in N and B
+        N, B = sinksource_ripple.update_N_B(G, N, B, E)
         F = F - N
-
-        print("\t\t|E|: %d, num_neighbors added: %d" % (len(E), len(N) - prev_size_N))
 
         update_time = time.time()
         # update the scores of nodes in N t times
@@ -189,26 +147,15 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
                 LBs[u] = a*LB_sum + f[u]
                 UBs[u] = a*UB_sum + f[u]
 
-#            if i == 0:
-#                # find the largest score difference after 1 iteration
-#                delta_N = 0
-#                largest_diff_node = None
-#                for n in N:
-#                    delta = LBs[n] - prev_LBs[n]
-#                    if delta > delta_N:
-#                        delta_N = delta
-#                        largest_diff_node = n
-#                #delta_N = max([LBs[n] - prev_LBs[n] for n in N])
-
+            # TODO try using the current score directly
             for n in N:
                 if LBs[n] < prev_LBs[n]:
-                    print("ERROR: LB decreased for %s: LBs[n]=%0.4f, prev_LBs[n]=%0.4f" % (n, LBs[n], prev_LBs[n]))
+                    print("Warning: LB decreased for %s: LBs[n]=%0.4f, prev_LBs[n]=%0.4f" % (n, LBs[n], prev_LBs[n]))
+                if UBs[n] > prev_UBs[n]:
+                    print("Warning: UB increased for %s: UBs[n]=%0.4f, prev_UBs[n]=%0.4f" % (n, UBs[n], prev_UBs[n]))
                 prev_LBs[n] = LBs[n]
                 prev_UBs[n] = UBs[n]
         print("\t\t%0.2f sec to update bounds" % (time.time() - update_time))
-
-        #min_delta = min([float(LBs[n] - prev_LBs[n]) for n in N])
-        #print("\t\tdelta_N: %0.4f, LBs[n]: %0.4f, min_delta: %0.5f" % (delta_N, LBs[largest_diff_node], min_delta))
 
         # if there aren't at least k nodes in the vicinity of N,
         # then there is no need to prune nodes from R
@@ -230,7 +177,11 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
 
         # update the UB of nodes in F to be the UB of the max boundary node
         if len(B) != 0:
-            max_boundary_score = max([UBs[n] for n in N & B])
+            # TODO for some reason, the UB can dip below the k_score, eliminating the node from R
+            # and then the node's score increases to be in the top-k. I think its node's in F whose
+            # upper bound isn't set correctly
+            #max_boundary_score = max([UBs[n] for n in N & B])
+            max_boundary_score = max([UBs[n] for n in B])
         else:
             max_boundary_score = 0
         print("\t\tk_score: %0.3f, max_boundary_score: %0.3f" % (k_score, max_boundary_score))
@@ -240,14 +191,15 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
             UBs[u] = a*max_boundary_score
             prev_UBs[u] = a*max_boundary_score
 
-        #UBs = computeUBs(LBs, UBs, G, R, N, B, F, delta_N, a, t, k_score)
         for u in N:
             if UBs[u] - LBs[u] < 0:
                 print("Warning: UB[u] - LB[u] < 0: %0.3f. u: %s" % (UBs[u] - LBs[u], u))
 
         not_topk = set()
         for u in R:
-            if UBs[u] < k_score:
+            # I added the LB check to ensure none of the top-k
+            # nodes are removed due to the - epsUB
+            if UBs[u] - epsUB < k_score and LBs[u] < k_score:
                 not_topk.add(u)
         R.difference_update(not_topk)
         #for u in R | N:
@@ -273,5 +225,31 @@ def SinkSourceTopK(G, f, k=100, t=2, s=2, a=1, deltaUBLB=None, k_score=0):
     total_time = time.time() - start_time
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
 
-    return R, LBs, total_time, num_iters, k_score, len(N)
+    return R, LBs, total_time, num_iters, len(N)
 
+
+def get_s_nodes_in_B(N, B, LBs, UBs, s):
+    """
+    Get the top s nodes in B with the highest LBs and UBs
+    I found that also exploring neighbors of nodes with high UBs
+    speeds up convergence
+    """
+    if len(B) > s:
+        if len(N) < s:
+            B_LBs = {n:LBs[n] for n in B}
+            # get the top s highest score nodes in B
+            E = set(sorted(B_LBs, key=B_LBs.get, reverse=True)[:s])
+        else:
+            half_s = int(s/2)
+            # get s nodes in B with the largest current scores
+            B_LBs = {n:LBs[n] for n in B}
+            # get the top s highest score nodes in B
+            E = set(sorted(B_LBs, key=B_LBs.get, reverse=True)[:half_s])
+            # also get the nodes in N with the highest UBs
+            # to ensure that both UBs and LBs are converging
+            B_UBs = {n:UBs[n] for n in B}
+            E.update(set(sorted(B_UBs, key=B_UBs.get, reverse=True)[:half_s]))
+    else:
+        E = B.copy()
+
+    return E
