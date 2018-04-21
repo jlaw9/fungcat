@@ -9,11 +9,12 @@ import time
 import operator
 # expects python 3 and networkx 2
 import networkx as nx
-import numpy as np
+#import numpy as np
 import alg_utils
 
 
-def runSinkSourceRipple(G, positives, negatives=None, k=100, t=2, s=2, a=0.8, deltaUBLB=None):
+def runSinkSourceRipple(G, positives, negatives=None, k=100, t=2, s=2, a=0.8, 
+        deltaUBLB=None, epsUB=0):
     #print("\t%d positives, k=%d, t=%d, s=%d, a=%0.2f, deltaUBLB=%s" % (len(positives), k, t, s, a, str(deltaUBLB)))
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
@@ -71,7 +72,9 @@ def runSinkSourceRipple(G, positives, negatives=None, k=100, t=2, s=2, a=0.8, de
 #    #R = sorted(all_LBs, key=all_LBs.get, reverse=True)[:k]
 #    overall_time += time
 
-    R, all_LBs, overall_time, iters, k_score, len_N = SinkSourceRipple(H, f, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB)
+    R, all_LBs, overall_time, iters, len_N = SinkSourceRipple(
+            H, f, k=k, t=t, s=s, a=a, deltaUBLB=deltaUBLB, 
+            epsUB=epsUB)
 
     return R, all_LBs, overall_time, iters, len_N
 
@@ -92,7 +95,8 @@ def fixNodes(G, nodes_to_fix, a=1, f={}, UBs={}, LBs={}):
         fixed_score = 1
         # fix the nodes score at the average of the UB and LB
         if v in UBs and v in LBs:
-            fixed_score = np.average((UBs[v], LBs[v]))
+            #fixed_score = np.average((UBs[v], LBs[v]))
+            fixed_score = (UBs[v] + LBs[v]) / 2.0
         for u in G.neighbors(v):
             f[u] += a*(G.edges[u,v]['weight'] * fixed_score)
             #G.remove_edge(u,v)
@@ -106,33 +110,18 @@ def fixNodes(G, nodes_to_fix, a=1, f={}, UBs={}, LBs={}):
 
 
 #def SinkSourcePlusTopKRanked(G, f, k=100, t=2, s=2, a=0.8):
-def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=0.00001, k_score=0):
+def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=None, k_score=0,
+        epsUB=0):
     """
     *G*: Row-normalized Graph with only unknowns
     *f*: initial vector f of amount of score received from positive nodes
     *deltaUBLB*: cutoff for UB-LB diff to fix a node's score
+    *epsUB*: if all other nodes have an UB - epsUB < the kth node's LB, then return the top-k 
     *k_score*: if a k_score is already known, use that, and update it if the k_score in this graph is higher
     *returns*: The set of top-k nodes, and current scores for all nodes
     """
     # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
-    R = set(G.nodes())
-    # initialize the vicinity to be empty
-    N = set()
-    # initialize F to be all nodes not in the vicinity
-    F = R - N
-    # initialize the boundary nodes to be those with a non-zero value in f.
-    # a node is a boundary node if it is in F with a score > 0,
-    # or it is a node in N with a neighbor in F
-    B = set([n for n in f if f[n] > 0])
-
-    # set the initial lower bound (LB) of each node to f or 0
-    # TODO no need to keep all nodes in the dictionary. Just the ones in B or N
-    LBs = f.copy()
-    # dictionary of LBs at the previous iteration
-    # start them at 0 so the delta_N will be the correct amount of change at each iteration
-    prev_LBs = {n: 0 for n in R}
-    # dictionary of Upper Bonds for each node
-    UBs = {}
+    R, N, F, B, LBs, prev_LBs, UBs = initialize_sets(G, f)
 
     num_iters = 0
     start_time = time.time()
@@ -152,24 +141,10 @@ def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=0.00001, k_score=0)
         else:
             E = B.copy()
 
-        # add the nodes in E and their neighbors to N
-        for u in E:
-            N.add(u)
-        prev_size_N = len(N)
-        for u in E:
-            # add u's neighbors to N
-            for neighbor in G.neighbors(u):
-                #neighbors_added.add(neighbor)
-                N.add(neighbor)
+        # Update nodes in N and B
+        N, B = update_N_B(G, N, B, E)
+        F = F - N
 
-        # update B by adding nodes in N that have have neighbors in F
-        for u in N:
-            if len(set(G.neighbors(u)) - N) > 0:
-                B.add(u)
-            elif u in B:
-                B.remove(u)
-
-        print("\t\t|E|: %d, num_neighbors added: %d" % (len(E), len(N) - prev_size_N))
         update_time = time.time()
 
         # update the scores of nodes in N t times
@@ -183,18 +158,11 @@ def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=0.00001, k_score=0)
 
             if i == 0:
                 # find the largest score difference after 1 iteration
-                delta_N = 0
-                #largest_diff_node = None
-                for n in N:
-                    delta = LBs[n] - prev_LBs[n]
-                    if delta > delta_N:
-                        delta_N = delta
-                        #largest_diff_node = n
-                #delta_N = max([LBs[n] - prev_LBs[n] for n in N])
+                delta_N = max(LBs[n] - prev_LBs[n] for n in N)
 
             for n in N:
                 prev_LBs[n] = LBs[n]
-        #min_delta = min([float(LBs[n] - prev_LBs[n]) for n in N])
+        #min_delta = min(float(LBs[n] - prev_LBs[n]) for n in N)
         #print("\t\tdelta_N: %0.4f, LBs[n]: %0.4f, min_delta: %0.5f" % (delta_N, LBs[largest_diff_node], min_delta))
         print("\t\t%0.2f sec to update bounds. delta_N: %0.4f" % (time.time() - update_time, delta_N))
 
@@ -208,18 +176,20 @@ def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=0.00001, k_score=0)
         if curr_k_score > k_score:
             k_score = curr_k_score
 
-        # now check to see if there are nodes that no longer are eligible for the top-k
-        # and if there are, remove them from R
-        F = F - N
-
+        # update the UBs
         UBs = computeUBs(LBs, UBs, G, R, N, B, F, delta_N, a, t, k_score)
 
+        # now check to see if there are nodes that no longer are eligible for the top-k
+        # and if there are, remove them from R
         not_topk = set()
         for u in R:
-            if UBs[u] < k_score:
+            # I added the LB check to ensure none of the top-k
+            # nodes are removed due to the - epsUB
+            if UBs[u] - epsUB < k_score and LBs[u] < k_score:
                 not_topk.add(u)
         R.difference_update(not_topk)
 
+        # TODO shouldn't be needed anymore as I added epsUB
         # check to see if all of the UBs for the kth node and up are tied
         # if so, then we have the top-k results and can quit
         # only need to check this if we're close to the end (len(R) < len(N))
@@ -237,7 +207,7 @@ def SinkSourceRipple(G, f, k=100, t=2, s=2, a=0.8, deltaUBLB=0.00001, k_score=0)
     total_time = time.time() - start_time
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
 
-    return R, LBs, total_time, num_iters, k_score, len(N)
+    return R, LBs, total_time, num_iters, len(N)
 
 
 def computeHopUB(max_boundary_score, a, t, delta_N, h=0):
@@ -263,10 +233,10 @@ def computeUBs(LBs, UBs, G, R, N, B, F, delta_N, a, t, k_score):
     # TODO update function to only compute UBs for nodes in R
     # May not offer much of a speed-up
     # Also, if we compute the UB for each node, we can use it to see if a node's score can be fixed
-    if len(B) != 0:
-        max_boundary_score = max([LBs[n] for n in B])
-    else:
-        max_boundary_score = 0
+    max_boundary_score = max([LBs[n] for n in B]) if len(B) != 0 else 0
+    # TODO potential bug here. The max_boundary_score increases sometimes
+    #max_boundary_score = max([LBs[n] for n in N & B]) if len(B) != 0 else 0
+
     print("\t\tk_score: %0.3f, max_boundary_score: %0.3f" % (k_score, max_boundary_score))
     #if len(R & F) > 0:
     # first check to see if nodes in F can be removed
@@ -286,9 +256,9 @@ def computeUBs(LBs, UBs, G, R, N, B, F, delta_N, a, t, k_score):
     # which is the # of steps needed to reach a node in F
     h = 1
     # start at boundary nodes in N
-    curr_nodes = N & B
+    curr_nodes = B
     curr_neighbors = set()
-    nodes_left = N.copy()
+    nodes_left = N - B
     currHopUB = 0
     while len(curr_nodes) > 0:
         currHopUB = computeHopUB(max_boundary_score, a, t, delta_N, h=h)
@@ -330,7 +300,8 @@ def checkFixNodes(G, f, N, B, LBs, UBs, a=1, deltaUBLB=0.00001):
         B.difference_update(nodes_to_fix)
         # also set their UB and LB to be their fixed score
         for u in nodes_to_fix:
-            fixed_score = np.average((UBs[u], LBs[u]))
+            #fixed_score = np.average((UBs[u], LBs[u]))
+            fixed_score = (UBs[u] + LBs[u]) / 2.0
             UBs[u] = fixed_score
             LBs[u] = fixed_score
 
@@ -358,3 +329,67 @@ def checkTopKTies(LBs, UBs, R, k, decimal_places=4):
             topk_plus_ties = False
             break
     return topk_plus_ties, R_UBs, k_UB
+
+
+def update_N_B(G, N, B, E, verbose=True):
+    """
+    Updates B and N in place to contain the additional nodes in E
+    B is updated to be the nodes in N that have neighbors in F
+    """
+    # add the nodes in E and their neighbors to N
+    for u in E:
+        N.add(u)
+    prev_size_N = len(N)
+    #neighbors_added = set()
+    for u in E:
+        # add u's neighbors to N
+        #neighbors = set(G.neighbors(u))
+        #N.update(neighbors)
+        #neighbors_added.update(neighbors)
+        for n in G.neighbors(u):
+            N.add(n)
+
+    # update B by adding nodes in N that have have neighbors in F
+    # We need to check each node because there could be nodes in B
+    # that are no longer boundary nodes from neighbors of nodes in E being added
+    # TODO this should be faster, but for some reason it isn't working
+    #for u in neighbors_added | B:
+    for u in N:
+        if len(set(G.neighbors(u)) - N) > 0:
+            B.add(u)
+        else:
+            B.discard(u)
+
+    if verbose is True:
+        print("\t\t|E|: %d, num_neighbors added: %d" % (len(E), len(N) - prev_size_N))
+
+    return N, B
+
+
+def initialize_sets(G, f):
+    """
+    Initializes all of the node sets and score dictionaries
+    """
+    R = set(G.nodes())
+    ## initialize the vicinity to be empty
+    #N = set()
+    # Initialize the vicinity to be the nodes with a non-zero score
+    # Otherwise if a node in B (non-zero score) that's not in N has the maximum boundary score,
+    # it's score could increase after the next iteration causing the upper bound to increase
+    N = set([n for n in f if f[n] > 0])
+    # initialize F to be all nodes not in the vicinity
+    F = R - N
+    # Boundary nodes are nodes in N with a neighbor in F
+    B = set([n for n in N if len(set(G.neighbors(n)) - N) > 0])
+
+    # set the initial lower bound (LB) of each node to f or 0
+    # TODO no need to keep all nodes in the dictionary. Just the ones in B or N
+    LBs = f.copy()
+    # dictionary of LBs at the previous iteration
+    # start them at 0 so the delta_N will be the correct amount of change at each iteration
+    prev_LBs = {n: 0 for n in R}
+
+    # dictionary of Upper Bonds for each node
+    UBs = {}
+
+    return R, N, F, B, LBs, prev_LBs, UBs

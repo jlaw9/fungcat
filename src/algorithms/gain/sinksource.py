@@ -1,26 +1,41 @@
 
 # Python implementation of SinkSource
-
-#import networkx as nx
 import time
 from tqdm import trange, tqdm
 import networkx as nx
 import alg_utils
+import numpy as np
+import gc
+from scipy.sparse import csr_matrix
 #import pdb
 
 
 # this is supposed to match the original implementation
-def SinkSource(G, f, unknowns, max_iters=1000, delta=0.0001, a=0.8):
+def SinkSource(G, f, unknowns, max_iters=1000, delta=0.0001, a=0.8, scores={}):
     """ Iterate over the graph until all of the scores of the unknowns have converged
     *max_iters*: maximum number of iterations
     *delta*: Epsilon convergence cutoff. If all nodes scores changed by < *delta* after an iteration, then stop
     *a*: alpha converted from lambda
+    *scores*: rather than start from scratch, we can start from a previous run's (or different GO term's) scores
     """
     converged = False
     iters = 0
     start_time = time.time()
-    s = f.copy()
-    prev_s = f.copy()
+    if len(scores) == 0:
+        s = f.copy()
+        prev_s = f.copy()
+    else:
+        s = scores.copy()
+        not_in_network = set(G.nodes()) - set(s.keys())
+        print("\t\t%d/%d passed in scores are in the network" \
+                % (len(s) - len(not_in_network), len(s)))
+        # set the scores for the nodes that are not in the passed in scores
+        for n in not_in_network:
+            if n in f:
+                s[n] = f[n]
+            else:
+                s[n] = 0
+        prev_s = s.copy()
     d = {n: 0 for n in s}
 
     for iters in trange(max_iters):
@@ -33,16 +48,22 @@ def SinkSource(G, f, unknowns, max_iters=1000, delta=0.0001, a=0.8):
             s[u] = a*neighbor_sum + f[u]
             #data['s'] = neighbor_sum / data['degree']
 
-        converged = True
-        # Update the previous value, as well as how much the score changed by (delta)
-        for u in unknowns:
-            #data = G.node[u]
-            d[u] = abs(prev_s[u] - s[u])
-            # check if the score changed enough to indicate the algorithm hasn't yet converged
-            if not converged or d[u] >= delta:
-                converged = False
+        
+        max_d = max(s[u] - prev_s[u] for u in unknowns)
+        tqdm.write("\t\tmax score change: %0.6f" % (max_d))
+        if max_d < delta:
+            converged = True
+#        converged = True
+#        # Update the previous value, as well as how much the score changed by (delta)
+#        for u in unknowns:
+#            #data = G.node[u]
+#            d[u] = abs(prev_s[u] - s[u])
+#            # check if the score changed enough to indicate the algorithm hasn't yet converged
+#            if not converged or d[u] >= delta:
+#                converged = False
 
             #data['prev_s'] = data['s']
+        for u in unknowns:
             prev_s[u] = s[u]
 
         #converged = hasConverged(G, unknowns, delta=delta)
@@ -55,6 +76,71 @@ def SinkSource(G, f, unknowns, max_iters=1000, delta=0.0001, a=0.8):
     #print("\t%s" % (', '.join(["%s: %s" % (u, G.node[u]['s']) for u in list(unknowns)[:15]])))
 
     return s, total_time, iters
+
+
+# this is supposed to match the original implementation
+def SinkSource_scipy(G, f, unknowns, max_iters=1000, delta=0.0001, a=0.8, scores={}):
+    """ Iterate over the graph until all of the scores of the unknowns have converged
+    *max_iters*: maximum number of iterations
+    *delta*: Epsilon convergence cutoff. If all nodes scores changed by < *delta* after an iteration, then stop
+    *a*: alpha converted from lambda
+    *scores*: rather than start from scratch, we can start from a previous run's (or different GO term's) scores
+    """
+    print("\tCopying G to a matrix")
+    A = nx.to_scipy_sparse_matrix(G)
+    del G
+    gc.collect()
+    #A = A.todense()
+    #A = np.squeeze(np.asarray(A))
+    new_f = []
+    for n in sorted(f):
+        new_f.append(f[n])
+    f = np.asarray(new_f)
+    print("\tdone")
+    converged = False
+    iters = 0
+    if len(scores) == 0:
+        s = np.asarray(f)
+        prev_s = s.copy()
+    else:
+        s = scores.copy()
+        not_in_network = set(G.nodes()) - set(s.keys())
+        print("\t\t%d/%d passed in scores are in the network" \
+                % (len(s) - len(not_in_network), len(s)))
+        # set the scores for the nodes that are not in the passed in scores
+        for n in not_in_network:
+            if n in f:
+                s[n] = f[n]
+            else:
+                s[n] = 0
+        s = np.asarray(s)
+        prev_s = s.copy()
+    #d = {n: 0 for n in s}
+    #d = np.asarray([0]*len(s))
+
+    start_time = time.time()
+    #for iters in trange(max_iters):
+    for iters in range(max_iters):
+        # this uses way too much ram
+        #s = a*np.dot(A,prev_s) + f
+        s = a*csr_matrix.dot(A,prev_s) + f
+        
+        max_d = (s - prev_s).max()
+        print("\t\tmax score change: %0.6f" % (max_d))
+        #tqdm.write("\t\tmax score change: %0.6f" % (max_d))
+        if max_d < delta:
+            # converged!
+            break
+        prev_s = s.copy()
+
+    total_time = time.time() - start_time
+    print("SinkSource converged after %d iterations (%0.2f sec)" % (iters, total_time))
+    #print("Scores of the top k nodes:")
+    #print("\t%s" % (', '.join(["%s: %s" % (u, G.node[u]['s']) for u in list(unknowns)[:15]])))
+    # convet s back to a dictionary
+    scores = {n:s[n] for n in range(len(s))}
+
+    return scores, total_time, iters
 
 
 ## this is supposed to match the original implementation
@@ -160,7 +246,7 @@ def setupScores(G, positives, negatives, unknowns, a=1):
     """
     """
 
-    print("Initializing scores and seteting up network")
+    #print("Initializing scores and setting up network")
     f = {}
     # initialize all of the scores of the nodes to 0
     for u in unknowns:
@@ -211,7 +297,7 @@ def setupScores(G, positives, negatives, unknowns, a=1):
 
 
 #def runSinkSource(G, positives, negatives=None, k=None, max_iters=1000, delta=0.0001, a=0.8):
-def runSinkSource(G, positives, negatives=None, max_iters=1000, delta=0.0001, a=0.8):
+def runSinkSource(G, positives, negatives=None, max_iters=1000, delta=0.0001, a=0.8, scores={}):
     """
     *G*: Should already be normalized
     *positives*: set of positive nodes
@@ -248,7 +334,8 @@ def runSinkSource(G, positives, negatives=None, max_iters=1000, delta=0.0001, a=
 #        print("\tGetting top %d predictions" % (k))
 #        G = SinkSourceUB(G, unknowns, k=k, max_iters=max_iters, delta=delta, a=a)
 #    else:
-    s, time, iters = SinkSource(H, f, unknowns, max_iters=max_iters, delta=delta, a=a)
+    s, time, iters = SinkSource(H, f, unknowns, max_iters=max_iters, delta=delta, a=a, scores=scores)
+    #s, time, iters = SinkSource_scipy(H, f, unknowns, max_iters=max_iters, delta=delta, a=a, scores=scores)
 
     # switch the nodes back to their names
     #G = nx.relabel_nodes(G,int2node)

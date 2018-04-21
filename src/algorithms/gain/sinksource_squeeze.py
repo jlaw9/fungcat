@@ -9,7 +9,7 @@ import time
 import operator
 # expects python 3 and networkx 2
 import networkx as nx
-import numpy as np
+#import numpy as np
 import alg_utils
 
 
@@ -96,7 +96,8 @@ def fixNodes(G, nodes_to_fix, a=1, f={}, UBs={}, LBs={}):
         fixed_score = 1
         # fix the nodes score at the average of the UB and LB
         if v in UBs and v in LBs:
-            fixed_score = np.average((UBs[v], LBs[v]))
+            #fixed_score = np.average((UBs[v], LBs[v]))
+            fixed_score = (UBs[v] + LBs[v]) / 2.0
         for u in G.neighbors(v):
             f[u] += a*(G.edges[u,v]['weight'] * fixed_score)
             #G.remove_edge(u,v)
@@ -255,7 +256,8 @@ def checkFixNodes(G, f, N, B, LBs, UBs, a=1, deltaUBLB=0.00001):
         B.difference_update(nodes_to_fix)
         # also set their UB and LB to be their fixed score
         for u in nodes_to_fix:
-            fixed_score = np.average((UBs[u], LBs[u]))
+            #fixed_score = np.average((UBs[u], LBs[u]))
+            fixed_score = (UBs[u] + LBs[u]) / 2.0
             UBs[u] = fixed_score
             LBs[u] = fixed_score
 
