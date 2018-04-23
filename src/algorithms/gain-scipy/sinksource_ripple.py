@@ -76,23 +76,10 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
             break
 
         num_iters += 1
-        if len(B) > s:
-            # using arpartition gives a tiny improvement 
-            # get the top s highest score nodes in B
-            Bl = list(B)
-            B_LBs = LBs[Bl]
-            # argpartition is supposed to be faster than sorting
-            # see here: https://stackoverflow.com/a/23734295
-            # TODO get the right node ids after this operation
-            E = set([Bl[i] for i in np.argpartition(B_LBs, -s)[-s:]])
-            #print("%d nodes different" % (s - len(E & E2)))
-        else:
-            E = B.copy()
+        E = get_top_s_boundary_nodes(B, LBs, s)
 
         # Update nodes in N and B
-        N, B = update_N_B(P, N, B, E, F)
-        # Update F to remove the new nodes in N
-        F = F - N
+        N, B, F = update_N_B_F(P, N, B, E, F)
         Fl = np.array(list(F))
 
         update_time = time.time()
@@ -244,10 +231,25 @@ def computeUBs(LBs, UBs, R, N, B, F, delta_N, a, t, k_score):
     return F_UB, N_UB
 
 
+def get_top_s_boundary_nodes(B, LBs, s):
+    if len(B) > s:
+        # using arpartition gives a tiny improvement 
+        # get the top s highest score nodes in B
+        Bl = list(B)
+        B_LBs = LBs[Bl]
+        # argpartition is supposed to be faster than sorting
+        # see here: https://stackoverflow.com/a/23734295
+        # TODO get the right node ids after this operation
+        E = set([Bl[i] for i in np.argpartition(B_LBs, -s)[-s:]])
+        #print("%d nodes different" % (s - len(E & E2)))
+    else:
+        E = B.copy()
+    return E
+
 #@profile
 # TODO this function takes ~1/2 of the total running time
 # I don't think there's anything else I can do to speed it up
-def update_N_B(P, N, B, E, F, verbose=True):
+def update_N_B_F(P, N, B, E, F, verbose=True):
     """
     Updates B and N in place to contain the additional nodes in E
     B is updated to be the nodes in N that have neighbors in F
@@ -262,17 +264,21 @@ def update_N_B(P, N, B, E, F, verbose=True):
     # then the nonzero columns in F 
     new_neighbors = set([Fl[i] for i in P[El][:,Fl].sum(axis=0).nonzero()[1]])
     N.update(new_neighbors)
+    # Update F to remove the new nodes in N
+    F = F - N
     # remove false positives in the loop below
     B.update(new_neighbors)
 
+    prev_size_B = len(B)
     # get the rows in N (nodes in the vicinity) and the columns in F (edges outside of N)
     # nodes with edges outside N are the boundary nodes
-    B = get_boundary_nodes_matrix(P, list(B), Fl)
+    B = get_boundary_nodes_matrix(P, list(B), list(F))
 
     if verbose is True:
-        print("\t\t|E|: %d, num_neighbors added: %d" % (len(E), len(N) - prev_size_N))
+        print("\t\t|E|: %d, num_neighbors added: %d, num B removed: %d" % (
+            len(E), len(N) - prev_size_N, prev_size_B - len(B)))
 
-    return N, B
+    return N, B, F
 
 
 def get_boundary_nodes(node_neighbors, N):
