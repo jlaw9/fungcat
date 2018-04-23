@@ -20,8 +20,6 @@ def runSinkSourceRipple(P, positives, negatives=None, k=100, t=2, s=2, a=0.8,
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
     #G = alg_utils.normalizeGraphEdgeWeights(G)
-    P = P.copy()
-    #print("Warning: deleting edges to positives in the original graph to speed up testing")
     P, f, int2int = alg_utils.setupScores(P, positives, negatives, a=a)
 
     if negatives is not None:
@@ -57,9 +55,9 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
     *returns*: The set of top-k nodes, and current scores for all nodes
     """
     # neighbors is an array of arrays containing the neighbors of each node
-    node_neighbors = alg_utils.get_neighbors(P)
+    #node_neighbors = alg_utils.get_neighbors(P)
     # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
-    R, N, F, B, LBs, prev_LBs, UBs = initialize_sets(P, f, node_neighbors)
+    R, N, F, B, LBs, prev_LBs, UBs = initialize_sets(P, f)
 
     num_iters = 0
     # total number of computations performed during the update function
@@ -79,30 +77,28 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         num_iters += 1
         if len(B) > s:
             # using arpartition gives a tiny improvement 
-#            B_LBs = {n:LBs[n] for n in B}
-#            # get the top s highest score nodes in B
-#            E = set(sorted(B_LBs, key=B_LBs.get, reverse=True)[:s])
             # get the top s highest score nodes in B
-            sorted_B = sorted(B)
-            B_LBs = np.array([LBs[n] for n in sorted_B])
+            Bl = list(B)
+            B_LBs = LBs[Bl]
             # argpartition is supposed to be faster than sorting
             # see here: https://stackoverflow.com/a/23734295
             # TODO get the right node ids after this operation
-            E = set([sorted_B[i] for i in np.argpartition(B_LBs, -s)[-s:]])
+            E = set([Bl[i] for i in np.argpartition(B_LBs, -s)[-s:]])
             #print("%d nodes different" % (s - len(E & E2)))
         else:
             E = B.copy()
 
         # Update nodes in N and B
-        N, B = update_N_B(P, node_neighbors, N, B, E, F)
+        N, B = update_N_B(P, N, B, E, F)
         # Update F to remove the new nodes in N
         F = F - N
 
         update_time = time.time()
         #print("\t\tGetting subnetwork")
-        N_arr = np.array(list(sorted(N)))
+        N_arr = np.array(list(N))
         # get the new vicinity (N) subnetwork of P
-        P_N = alg_utils.select_nodes(P, N_arr)
+        #P_N = alg_utils.select_nodes(P, N_arr)
+        P_N = P[N_arr,:][:,N_arr]
         prev_LBs_N = prev_LBs[N_arr]
         #LBs_N = LBs[N]
         f_N = f[N_arr]
@@ -138,7 +134,7 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         k_score = LBs[np.argpartition(LBs, -k)[-k]]
 
         # update the UBs
-        F_UB, N_UB = computeUBs(LBs, UBs, node_neighbors, 
+        F_UB, N_UB = computeUBs(LBs, UBs, 
                 R, N, B, F, delta_N, a, t, k_score)
         # TODO test using the hopsUB
         #UBs = computeUBs(LBs, UBs, node_neighbors, 
@@ -152,22 +148,9 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         # and if there are, remove them from R
         #R = R - set(np.where(UBs[not_topk] - epsUB < k_score)[0])
         # get the set of nodes in N whose UB is >= the kth node's score
-        R = set([N_arr[i] for i in np.where(LBs_N + N_UB - epsUB >= k_score)[0]])
-
-#        # TODO shouldn't be needed anymore as I added epsUB
-#        # check to see if all of the UBs for the kth node and up are tied
-#        # if so, then we have the top-k results and can quit
-#        # only need to check this if we're close to the end (len(R) < len(N))
-#        if len(R) < len(N) and len(R) > k:
-#            topk_plus_ties, R_UBs, k_UB = checkTopKTies(LBs, UBs, R, k)
-#            if topk_plus_ties is True:
-#                print("\t%d node UBs are tied with the kth UB %0.5f. Finished" % (len(R_UBs), k_UB))
-#                break
-#
-#        if deltaUBLB is not None:
-#            G, f, N, B, LBs, UBs = checkFixNodes(G, f, N, B, LBs, UBs, a=a, deltaUBLB=deltaUBLB)
-        #if len(R) - k < 10:
-        #    print("; ".join(["%s: LB=%0.4f, UB=%0.4f" % (u, LBs[u], UBs[u]) for u in R]))
+        # TODO potiential bug. Sometimes a node is removed from R when it shouldn't be
+        # TODO could some nodes outside of N be in the topk?
+        R = [N_arr[i] for i in np.where(LBs_N + N_UB - epsUB >= k_score)[0]]
 
     total_time = time.time() - start_time
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
@@ -199,13 +182,12 @@ def computeHopUB(max_boundary_score, a, t, delta_N, h=0):
     return hopUB
 
 
-def computeUBs(LBs, UBs, node_neighbors, R, N, B, F, delta_N, a, t, k_score):
-
-    # TODO update function to only compute UBs for nodes in R
+def computeUBs(LBs, UBs, R, N, B, F, delta_N, a, t, k_score):
     # May not offer much of a speed-up
     # Also, if we compute the UB for each node, we can use it to see if a node's score can be fixed
     max_boundary_score = LBs[list(B)].max() if len(B) != 0 else 0
     # TODO potential bug here. The max_boundary_score increases sometimes
+    # causing the UB to increase
     #max_boundary_score = max([LBs[n] for n in N & B]) if len(B) != 0 else 0
 
     print("\t\tk_score: %0.3f, max_boundary_score: %0.3f" % (k_score, max_boundary_score))
@@ -254,7 +236,7 @@ def computeUBs(LBs, UBs, node_neighbors, R, N, B, F, delta_N, a, t, k_score):
 #@profile
 # TODO this function takes ~1/2 of the total running time
 # I don't think there's anything else I can do to speed it up
-def update_N_B(P, node_neighbors, N, B, E, F, verbose=True):
+def update_N_B(P, N, B, E, F, verbose=True):
     """
     Updates B and N in place to contain the additional nodes in E
     B is updated to be the nodes in N that have neighbors in F
@@ -265,13 +247,9 @@ def update_N_B(P, node_neighbors, N, B, E, F, verbose=True):
     B.difference_update(E)
     prev_size_N = len(N)
     new_neighbors = set()
-#    for u in E:
-#        new_neighbors.update(node_neighbors[u]) 
-#        # add u's neighbors to N
-#        #N.update(node_neighbors[u])
     # to get the neighbors of E, get the rows of E, 
     # then the nonzero columns in F 
-    new_neighbors = set([Fl[i] for i in P[El][:,Fl].sum(axis=0).nonzero()[0]])
+    new_neighbors = set([Fl[i] for i in P[El][:,Fl].sum(axis=0).nonzero()[1]])
     N.update(new_neighbors)
     # remove false positives in the loop below
     B.update(new_neighbors)
@@ -280,18 +258,6 @@ def update_N_B(P, node_neighbors, N, B, E, F, verbose=True):
     # nodes with edges outside N are the boundary nodes
     B = get_boundary_nodes_matrix(P, list(B), Fl)
 
-#    # loop through the boundary nodes and newly added nodes to see 
-#    # which of them are boundary nodes
-#    for u in B.copy():
-#        boundary_node = False
-#        for i in node_neighbors[u]:
-#            if i not in N:
-#                boundary_node = True 
-#                B.add(u)
-#                break
-#        if not boundary_node: 
-#            B.discard(u)
-#    B = get_boundary_nodes(node_neighbors, N)
     if verbose is True:
         print("\t\t|E|: %d, num_neighbors added: %d" % (len(E), len(N) - prev_size_N))
 
@@ -319,12 +285,12 @@ def get_boundary_nodes(node_neighbors, N):
 def get_boundary_nodes_matrix(P, N, F):
     #print("\t\tGetting boundary nodes")
 
-    B = [N[i] for i in P[N][:,F].sum(axis=1).nonzero()[0]]
+    B = set([N[i] for i in P[N][:,F].sum(axis=1).nonzero()[0]])
 
-    return set(B)
+    return B
 
 
-def initialize_sets(P, f, node_neighbors):
+def initialize_sets(P, f):
     """
     Initializes all of the node sets and score dictionaries
     """
@@ -333,7 +299,8 @@ def initialize_sets(P, f, node_neighbors):
     a_h = {}
 
     # R is the set of candidate top-k nodes
-    R = set(np.arange(P.shape[0]).astype(int))
+    # python set operations are faster than numpy 
+    R = set(range(P.shape[0]))
     # Initialize the vicinity to be the nodes with a non-zero score
     # Otherwise if a node in B (non-zero score) that's not in N has the maximum boundary score,
     # it's score could increase after the next iteration causing the upper bound to increase
@@ -342,7 +309,7 @@ def initialize_sets(P, f, node_neighbors):
     F = R - N
     # Boundary nodes are nodes in N with a neighbor in F
     # TODO this is too slow...
-    B = get_boundary_nodes(node_neighbors, N)
+    B = get_boundary_nodes_matrix(P, list(N), list(F))
     #B = np.setdiff1d(csr_matrix.dot(P, f).nonzero()[0], f.nonzero()[0])
 
     # set the initial lower bound (LB) of each node to f or 0
