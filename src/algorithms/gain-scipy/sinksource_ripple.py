@@ -46,6 +46,7 @@ def runSinkSourceRipple(P, positives, negatives=None, k=100, t=2, s=2, a=0.8,
     return R, all_LBs, overall_time, iters, total_comp, len_N, max_d_list
 
 
+#@profile
 def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
     """
     *P*: Row-normalized sparse-matrix representation of the graph
@@ -92,32 +93,41 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         N, B = update_N_B(P, N, B, E, F)
         # Update F to remove the new nodes in N
         F = F - N
+        Fl = np.array(list(F))
 
         update_time = time.time()
         #print("\t\tGetting subnetwork")
         N_arr = np.array(list(N))
         # get the new vicinity (N) subnetwork of P
         #P_N = alg_utils.select_nodes(P, N_arr)
-        P_N = P[N_arr,:][:,N_arr]
-        prev_LBs_N = prev_LBs[N_arr]
-        #LBs_N = LBs[N]
-        f_N = f[N_arr]
+        # TODO instead of getting a submatrix set node scores not in vicinity to 0
+        #P_N = P[N_arr,:][:,N_arr]
+        #prev_LBs_N = prev_LBs[N_arr]
+        #prev_LBs_N = prev_LBs.copy()
+        #prev_LBs[list(F)] = 0
+        ##LBs_N = LBs[N]
+        #f_N = f[N_arr]
+        f_N = f
         #print("\t\tupdating")
-        total_comp += len(P_N.data) * t
+        #total_comp += len(P_N.data) * t
 
         # update the scores of nodes in N t times
         for i in range(t):
-            LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
+            #LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
+            LBs = a*csr_matrix.dot(P, prev_LBs) + f_N
 
+            LBs[Fl] = 0
             if i == 0:
                 # find the largest score difference after 1 iteration
-                delta_N = (LBs_N - prev_LBs_N).max()
+                #delta_N = (LBs_N - prev_LBs_N).max()
+                delta_N = (LBs - prev_LBs).max()
 
-            prev_LBs_N = LBs_N.copy()
+            prev_LBs = LBs.copy()
+            #prev_LBs_N = LBs_N.copy()
             #for n in range(len(N)):
             #    prev_LBs_N[n] = LBs_N[n]
-        LBs[N_arr] = LBs_N
-        prev_LBs[N_arr] = prev_LBs_N
+        #LBs[N_arr] = LBs_N
+        #prev_LBs[N_arr] = prev_LBs_N
         print("\t\t%0.2f sec to update bounds. delta_N: %0.4f" % (time.time() - update_time, delta_N))
         max_d_list.append(delta_N) 
 
@@ -150,7 +160,8 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         # get the set of nodes in N whose UB is >= the kth node's score
         # TODO potiential bug. Sometimes a node is removed from R when it shouldn't be
         # TODO could some nodes outside of N be in the topk?
-        R = [N_arr[i] for i in np.where(LBs_N + N_UB - epsUB >= k_score)[0]]
+        #R = [N_arr[i] for i in np.where(LBs_N + N_UB - epsUB >= k_score)[0]]
+        R = [N_arr[i] for i in np.where(LBs[N_arr] + N_UB - epsUB >= k_score)[0]]
 
     total_time = time.time() - start_time
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
