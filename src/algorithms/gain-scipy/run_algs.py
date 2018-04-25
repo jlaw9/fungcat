@@ -59,46 +59,6 @@ class Alg_Runner:
         self.int2node = {}
         self.node2int = {}
 
-    def parse_pos_neg_matrix(self, pos_neg_file):
-        print("Reading positive and negative annotations for each protein from %s" % (pos_neg_file))
-        goid_prots = defaultdict(set)
-        goid_neg = defaultdict(set)
-        num_prots = 0
-        # TODO write the BP and MF terms to the same file
-        # TODO possibly use pickle
-        goid_prots_file = pos_neg_file.replace(".tsv", "-pos-list.txt")
-        goid_neg_file = pos_neg_file.replace(".tsv", "-neg-list.txt")
-        if os.path.isfile(goid_prots_file):
-            goid_prots = {goid: set(prots.split(',')) for goid, prots in utils.readColumns(goid_prots_file, 1, 2)}
-            goid_neg = {goid: set(prots.split(',')) for goid, prots in utils.readColumns(goid_neg_file, 1, 2)}
-        else:
-            #pos_neg = df.read_csv(pos_neg_file)
-            # for each GO term, get the set of positives and negatives
-            with open(pos_neg_file, 'r') as f:
-                goterms = f.readline().rstrip().split('\t')[1:]
-                for line in f:
-                    line = line.rstrip().split('\t')
-                    num_prots += 1
-                    prot = line[0]
-                    vals = line[1:]
-                    for i in range(0, len(vals)):
-                        val = int(vals[i])
-                        if val == 1:
-                            goid_prots[goterms[i]].add(prot)
-                        elif val == -1:
-                            goid_neg[goterms[i]].add(prot)
-
-            print("Writing %s for easier access" % (goid_prots_file))
-            with open(goid_prots_file, 'w') as out:
-                out.write(''.join(["%s\t%s\n" % (goid, ','.join(prots)) for goid, prots in goid_prots.items()]))
-
-            with open(goid_neg_file, 'w') as out:
-                out.write(''.join(["%s\t%s\n" % (goid, ','.join(prots)) for goid, prots in goid_neg.items()]))
-
-        print("\t%d GO terms, %d prots" % (len(goid_prots), num_prots))
-
-        return goid_prots, goid_neg
-
 
     def parse_pos_neg_file(self, pos_neg_file):
         print("Reading positive and negative annotations for each protein from %s" % (pos_neg_file))
@@ -133,16 +93,6 @@ class Alg_Runner:
         if os.path.isfile(sparse_net_file):
             print("Reading network from %s" % (sparse_net_file))
             P = scipy.sparse.load_npz(sparse_net_file)
-#        else:
-#            print("Reading network from %s" % (normalized_net_file))
-#            # takes more memory and time to read the file into memory and then loop through it
-#            #lines = utils.readColumns(normalized_net_file, 1, 2, 3)
-#            #H.add_weighted_edges_from([(int(u),int(v),float(w)) for u,v,w in lines])
-#            # TODO store the network as a 
-#            i, j, val = np.loadtxt(normalized_net_file).T
-#            P = scipy.sparse.coo_matrix((val, (i, j))).tocsr()
-#            scipy.sparse.save_npz(sparse_net_file, P)
-            #print("\t%d nodes and %d edges" % (H.number_of_nodes(), H.number_of_edges()))
             print("Reading node names from %s" % (node2int_file))
             node2int = {n: int(n2) for n, n2 in utils.readColumns(node2int_file, 1, 2)}
             int2node = {int(n): n2 for n, n2 in utils.readColumns(node2int_file, 2, 1)}
@@ -197,13 +147,10 @@ class Alg_Runner:
     def main(self):
         version_params_results = {}
 
-        #version = "2017_10-seq-sim"
-        #versions = ["2017_10-string"]
         for version in self.versions:
             INPUTSPREFIX, RESULTSPREFIX, network_file, selected_strains = f_settings.set_version(version)
             self.INPUTSPREFIX = INPUTSPREFIX
             self.RESULTSPREFIX = RESULTSPREFIX
-            #gain_file = f_settings.GOA_ALL_FUN_FILE
             # start with a single species
             #self.taxon = "208964"
             if self.taxon is not None:
@@ -224,7 +171,7 @@ class Alg_Runner:
                 all_goid_prots.update(goid_prots)
                 all_goid_neg.update(goid_neg)
 
-            print(len(self.goterms))
+            #print(len(self.goterms))
             if self.goterms is None:
                 self.goterms = set(goid_pos_neg.values())
 
@@ -246,16 +193,7 @@ class Alg_Runner:
                 out_dir = "%s/all/%s/%s" % (self.RESULTSPREFIX, alg, self.exp_name)
                 utils.checkDir(out_dir)
 
-                # instead of storing the results for each GO term in a separate file,
-                # store the predictions for all GO terms in the same file for each algorithm and parameter set
-                # For now, each run is appending to the file, rather than writing everything at the end
-                # TODO check if the file already exists. 
-                # If it does, load it and check if the results for the GO term already exist, 
-                # and proceed accordingly
-                #out_file = "%s/%s"
-
                 if self.only_cv is False:
-                    #out_pref = "%s/%s-" % (out_dir, goterm.replace(':',''))
                     if self.num_pred_to_write == 0:
                         out_pref = None
                     else:
@@ -295,7 +233,7 @@ class Alg_Runner:
 
     def run_alg_with_params(self, P, alg, goid_pos_neg,
                             out_pref=None):
-        """
+        """ Call the appropriate algorithm's function
         """
         params_results = {}
 
@@ -379,7 +317,10 @@ class Alg_Runner:
 
     def run_alg_on_goterms(self, P, alg, goid_pos_neg, out_file=None, 
             a=0.8, eps='-', k='-', t='-', s='-', epsUB=0):
-                # saves a lot of time keeping the file handle open
+        """ Run the specified algorithm with the given parameters for each goterm 
+        *returns*: a dictionary of scores from the algorithm for each goterm
+            and a dictionary of summary statistics about the run
+        """
         params_results = {}
         # scores from the algorithm for each goterm
         goid_scores = {}
@@ -389,6 +330,7 @@ class Alg_Runner:
                     print("%s already exists. Use --forcealg to overwrite" % (out_file))
                     return params_results
 
+                # saves a lot of time keeping the file handle open
                 file_handle = open(out_file, 'w')
                 file_handle.write("#goterm\tprot\tscore\n")
                 #file_handle.write("#%s\tk=%d\tt=%d\ts=%d\ta=%s\tepsUB=%s\n" \
