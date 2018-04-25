@@ -29,15 +29,21 @@ def convert_nodes_to_int(G):
 #    return node2int, int2node
 
 
-def normalizeGraphEdgeWeights(W):
+#def normalizeGraphEdgeWeights(W):
+def normalizeGraphEdgeWeights(W, l=None):
     """
     *W*: weighted network as a scipy sparse matrix in csr format
+    *l*: SinkSourcePlus lambda parameter
     """
-    # normalizing the matrix
+    # normalize the matrix
     # by dividing every edge by the node's degree (row sum)
-    # this gives a memory error likely because it first converts them to a numpy matrix
+    if l is None:
+        P = W.multiply(csr_matrix(1/W.sum(axis=1).astype(float)))
+    else:
+        P = W.multiply(csr_matrix(1/(l+W.sum(axis=1).astype(float))))
+    return P
+    # this gives a memory error likely because it first converts the matrix to a numpy matrix
     #return W / W.sum(axis=1)
-    return W.multiply(csr_matrix(1/W.sum(axis=1).astype(float)))
 #def normalizeGraphEdgeWeights(W):
 #    """
 #    *W*: weighted network as a scipy sparse matrix in csr format
@@ -59,6 +65,8 @@ def setupScores(P, positives, negatives=None, a=1):
     #print("Initializing scores and setting up network")
     pos_vec = np.zeros(P.shape[0])
     pos_vec[positives] = 1
+    #if negatives is not None:
+    #    pos_vec[negatives] = -1
 
     # f contains the fixed amount of score coming from positive nodes
     f = a*csr_matrix.dot(P, pos_vec)
@@ -66,7 +74,7 @@ def setupScores(P, positives, negatives=None, a=1):
     if negatives is None:
         fixed_nodes = positives
     else:
-        fixed_nodes = np.concatenate(positives, negatives)
+        fixed_nodes = np.concatenate([positives, negatives])
 
     # keep track of the original node integers 
     # to be able to map back to the original node names

@@ -27,8 +27,10 @@ class Alg_Runner:
     Base class for running algorithms
     """
     def __init__(self, versions, exp_name, pos_neg_files, goterms=None, 
-            algorithms=["sinksource"], eps_list=[0.0001], k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
-            deltaUBLB_list=[None], epsUB_list=[0], taxon=None, num_pred_to_write=100, cross_validation_folds=None, 
+            algorithms=["sinksource"], l=None, eps_list=[0.0001], 
+            k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
+            deltaUBLB_list=[None], epsUB_list=[0], taxon=None, num_pred_to_write=100, 
+            only_cv=False, cross_validation_folds=None, 
             forcealg=False, verbose=False):
         """
         *eps*: Convergence cutoff for sinksource and sinksourceplus
@@ -43,9 +45,11 @@ class Alg_Runner:
         self.t_list = t_list
         self.s_list = s_list
         self.a_list = a_list
+        self.l = l
         self.deltaUBLB_list = deltaUBLB_list
         self.epsUB_list = epsUB_list
         self.taxon = taxon
+        self.only_cv = only_cv
         self.cross_validation_folds = cross_validation_folds
         self.num_pred_to_write = num_pred_to_write
         self.forcealg = forcealg
@@ -120,7 +124,11 @@ class Alg_Runner:
     def setup_network(self, network_file):
         # TODO update reading the initial network file
         #normalized_net_file = network_file.replace(".txt", "-normalized.txt")
-        sparse_net_file = network_file.replace('.txt', '-normalized.npz')
+        if self.l is None:
+            sparse_net_file = network_file.replace('.txt', '-normalized.npz')
+        else:
+            sparse_net_file = network_file.replace('.txt', '-normalized-l%s.npz' % (
+                str(self.l).replace('.', '_')))
         node2int_file = network_file.replace(".txt", "-node2int.txt")
         if os.path.isfile(sparse_net_file):
             print("Reading network from %s" % (sparse_net_file))
@@ -170,7 +178,8 @@ class Alg_Runner:
             W = nx.to_scipy_sparse_matrix(G, nodelist=sorted(G.nodes()))
 
             print("\tnormalizing edge weights by dividng each edge weight by tail node's out_degree")
-            P = alg_utils.normalizeGraphEdgeWeights(W)
+            #P = alg_utils.normalizeGraphEdgeWeights(W)
+            P = alg_utils.normalizeGraphEdgeWeights(W, l=10)
 
             print("\twriting sparse normalized network to %s" % (sparse_net_file))
             scipy.sparse.save_npz(sparse_net_file, P)
@@ -245,27 +254,21 @@ class Alg_Runner:
                 # and proceed accordingly
                 #out_file = "%s/%s"
 
-                #out_pref = "%s/%s-" % (out_dir, goterm.replace(':',''))
-                if self.num_pred_to_write == 0:
-                    out_pref = None
-                else:
-                    out_pref = "%s/all-pred-" % (out_dir)
+                if self.only_cv is False:
+                    #out_pref = "%s/%s-" % (out_dir, goterm.replace(':',''))
+                    if self.num_pred_to_write == 0:
+                        out_pref = None
+                    else:
+                        out_pref = "%s/all-pred-" % (out_dir)
 
-                # now run the algorithm with all combinations of parameters
-#                    if alg in ["sinksource", "sinksourceplus"]:
-                curr_params_results = self.run_alg_with_params(
-                        P, alg, goid_pos_neg, out_pref=out_pref)
+                    # now run the algorithm with all combinations of parameters
+                    curr_params_results = self.run_alg_with_params(
+                            P, alg, goid_pos_neg, out_pref=out_pref)
 
-#                    elif alg in ["sinksource-ripple", "sinksourceplus-ripple"]:
-#                        scores, curr_params_results = run_topk_with_params(
-#                                P, alg, goterm, out_pref, positives, negatives,
-#                                k_list, t_list, s_list, a_list, deltaUBLB_list, 
-#                                epsUB_list, forced=forcealg)
-                
-                params_results.update(curr_params_results)
+                    params_results.update(curr_params_results)
 
                 if self.cross_validation_folds is not None:
-                    cv_params_results = run_cross_validation(H, alg, goterm, positives, negatives, out_pref, folds=cross_validation_folds, a=0.8, eps=0.0001)
+                    cv_params_results = self.run_cross_validation(P, alg, goid_pos_neg, folds=self.cross_validation_folds)
                     params_results.update(cv_params_results)
 
                 if self.verbose:
@@ -276,14 +279,14 @@ class Alg_Runner:
         if self.verbose:
             for version in self.versions:
                 print(version)
-                table = params_results_to_table(params_results)
-                out_dir = "outputs/viz/%s" % (self.exp_name)
+                table = params_results_to_table(version_params_results[version])
+                print(table)
+                out_dir = "outputs/viz/params-results/%s" % (self.exp_name)
                 utils.checkDir(out_dir)
-                out_file = "%s/params-results.tsv" % (out_dir)
+                out_file = "%s/%s-params-results.tsv" % (out_dir, version)
                 print("writing %s" % (out_file))
                 with open(out_file, 'w') as out:
                     out.write(table)
-                print(table)
 
         return
 
@@ -323,7 +326,7 @@ class Alg_Runner:
                 #header = "#%s\tGO term: %s\t%d positives\t%d negatives\ta=%s\teps=%s\n" \
                 #        % (alg, goterm, len(positives), len(negatives), str(a), str(eps))
 
-            params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, 
+            goid_scores, params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, 
                     out_file=out_file, a=a, eps=eps)
             all_params_results.update(params_results)
 
@@ -354,7 +357,7 @@ class Alg_Runner:
                     #print("Running %s with %d positives, %d negatives, k=%d, t=%d, s=%d, a=%s, deltaUBLB=%s for GO term %s" \
                     #        % (alg, len(positives), len(negatives), k, t, s, str(a), str(deltaUBLB), goterm))
 
-                    params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, out_file=out_file,
+                    goid_scores, params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, out_file=out_file,
                             a=a, k=k, t=t, s=s, epsUB=epsUB)
                     all_params_results.update(params_results)
                         # also keep track of the time it takes for each of the parameter sets
@@ -364,7 +367,7 @@ class Alg_Runner:
                 if out_pref is not None:
                     out_file = "%sk%d-a%s-epsUB%s.txt" % (out_pref, k, str(a).replace('.', '_'),
                                                             str(epsUB).replace('.', '_'))
-                params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, out_file=out_file,
+                goid_scores, params_results = self.run_alg_on_goterms(P, alg, goid_pos_neg, out_file=out_file,
                         a=a, k=k, epsUB=epsUB)
                 all_params_results.update(params_results)
 
@@ -378,6 +381,8 @@ class Alg_Runner:
             a=0.8, eps='-', k='-', t='-', s='-', epsUB=0):
                 # saves a lot of time keeping the file handle open
         params_results = {}
+        # scores from the algorithm for each goterm
+        goid_scores = {}
         try:
             if out_file is not None:
                 if self.forcealg is False and os.path.isfile(out_file):
@@ -422,6 +427,8 @@ class Alg_Runner:
                 tqdm.write("\t%s converged after %d iterations " % (alg, iters) + \
                         "(%0.2f sec) for goterm %s" % (time, goterm))
 
+                goid_scores[goterm] = scores
+
                 # also keep track of the time it takes for each of the parameter sets
                 params_key = (alg, goterm, len(positives), num_unk, a, eps, k, t, s, epsUB)
                 params_results[params_key] = (time, iters, comp, len_N)
@@ -434,7 +441,7 @@ class Alg_Runner:
 
                 # TODO move this somewhere else
                 # plot the max_ds
-                self.plot_max_ds(max_ds)
+                #self.plot_max_ds(max_ds)
         except:
             if out_file is not None:
                 file_handle.close()
@@ -444,7 +451,7 @@ class Alg_Runner:
             file_handle.close()
             print("Finished running %s for %d goterms. Wrote to %s" % (alg, len(goid_pos_neg), out_file))
 
-        return params_results
+        return goid_scores, params_results
 
 
     def plot_max_ds(self, max_d_list):
@@ -492,90 +499,114 @@ class Alg_Runner:
         return
 
 
-def run_cross_validation(H, alg, goterm, positives, negatives, out_pref, folds=5, a=0.8, eps=0.0001):
-    from sklearn.model_selection import KFold
+    def run_cross_validation(self, P, alg, goid_pos_neg, folds=5, out_pref=None):
+        from sklearn.model_selection import KFold
+        from sklearn import metrics
 
-    # compare how long it takes to run each from scratch vs using the previous run's scores
-    global int2node
-    global node2int
-    params_results = {}
-    overall_time_normal = 0
-    overall_time_using_predictions = 0
+        # compare how long it takes to run each from scratch vs using the previous run's scores
+        params_results = {}
+        overall_time_normal = 0
+        overall_time_using_predictions = 0
 
-    if alg != "sinksourceplus":
-        print("Not yet implemented")
-        return
-    if alg == "sinksourceplus":
-        # this should already have been created from the regular run
-        out_file = "%sa%s-eps%s.txt" % (out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
-        print("\tReading scores from %s" % (out_file))
-        prediction_scores = {node2int[goterm]: float(score) for goterm, score in utils.readColumns(out_file, 1, 2)}
-        #predition_scores, time, iters = sinksource.runSinkSource(H, positives, negatives=None, max_iters=1000, delta=eps, a=a)
+        if alg != "sinksourceplus":
+            print("Not yet implemented")
+            return params_results
+    #    if alg == "sinksourceplus":
+    #        # this should already have been created from the regular run
+    #        out_file = "%sa%s-eps%s.txt" % (out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
+    #        print("\tReading scores from %s" % (out_file))
+    #        prediction_scores = {node2int[goterm]: float(score) for goterm, score in utils.readColumns(out_file, 1, 2)}
+    #        #predition_scores, time, iters = sinksource.runSinkSource(H, positives, negatives=None, max_iters=1000, delta=eps, a=a)
 
-    # make the positives and negatives into numpy arrays
-    positives = np.array(list(positives))
-    #negatives = np.array(negatives)
-    kf = KFold(n_splits=folds, shuffle=True)
-    kf.get_n_splits(positives)
-    fold = 0
-    orig_num_iters = []
-    scratch_num_iters = []
-    for train_idx, test_idx in kf.split(positives):
-        fold += 1
-        pos_train, pos_test = set(positives[train_idx]), set(positives[test_idx])
-        print(pos_train)
-        print("Current fold: %d train positives, %d test" % (len(pos_train), len(pos_test)))
-        if alg == "sinksourceplus":
-            scores, time, iters = sinksource.runSinkSource(H, pos_train, negatives=None, max_iters=1000, delta=eps, a=a, scores=prediction_scores.copy())
-            orig_num_iters.append(iters)
-            overall_time_using_predictions += time
-            print("Time (min) to run from original scores: %0.2f" % (time / float(60)))
-#            out_file = "%sa%s-eps%s-fold%d-orig.txt" % (out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'), fold)
-#            print("Writing %s" % (out_file))
-#            # write the scores to a file
-#            with open(out_file, 'w') as f:
-#                for n in sorted(scores, key=scores.get, reverse=True):
-#                    f.write("%s\t%0.6f\n" % (int2node[n], scores[n]))
+        print("Running cross-validation for %d goterms using %d folds for %s - a=%s, eps=%s" % (
+            len(goid_pos_neg), self.cross_validation_folds, alg, self.a_list[0], self.eps_list[0]))
 
-            scores, time, iters = sinksource.runSinkSource(H, pos_train, negatives=None, max_iters=1000, delta=eps, a=a)
-            scratch_num_iters.append(iters)
-            overall_time_normal += time
-            print("Time (min) to run from scratch: %0.2f" % (time / float(60)))
-#            out_file = "%sa%s-eps%s-fold%d-scratch.txt" % (out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'), fold)
-#            print("Writing %s" % (out_file))
-#            # write the scores to a file
-#            with open(out_file, 'w') as f:
-#                for n in sorted(scores, key=scores.get, reverse=True):
-#                    f.write("%s\t%0.6f\n" % (int2node[n], scores[n]))
-            # TODO evaluate the cross-validation
-    print("Total time (min) to run from scratch: %0.2f" % (overall_time_normal / float(60)))
-    print("Total time (min) to run from original scores: %0.2f" % (overall_time_using_predictions / float(60)))
-    print("Iterations from scratch: %s" % (','.join([str(x) for x in scratch_num_iters])))
-    print("Iterations from original scores: %s" % (','.join([str(x) for x in orig_num_iters])))
-    time_diff = overall_time_normal - overall_time_using_predictions
-    avg_iter_diff = np.mean(scratch_num_iters) - np.mean(orig_num_iters)
-    params_key = (alg, goterm, 'folds=5', '-', '-', a, 'eps=%s'%str(eps))
-    params_results[params_key] = (time_diff, avg_iter_diff, '-')
+        for goterm in tqdm(goid_pos_neg):
+            positives, negatives = goid_pos_neg[goterm]['pos'], goid_pos_neg[goterm]['neg']
+            kf = KFold(n_splits=folds, shuffle=True)
+            kf.get_n_splits(positives)
+            fold = 0
+            # because each fold contains a different set of positives, and combined they contain all positives,
+            # store all of the prediction scores from each fold in a list
+            combined_fold_scores = {}
+            pos_unknowns = set(range(P.shape[0])) - set(positives) 
+            for train_idx, test_idx in tqdm(kf.split(positives)):
+                fold += 1
+                pos_train, pos_test = positives[train_idx], positives[test_idx]
+                #print(pos_train)
+                #print("Current fold: %d train positives, %d test" % (len(pos_train), len(pos_test)))
+                if alg == "sinksourceplus":
+                    # TODO streamline multiple parameters
+                    scores, time, iters, comp = sinksource.runSinkSource(
+                            P, pos_train, negatives=None, max_iters=1000, delta=self.eps_list[0], a=self.a_list[0])
+                    # scores is a dictionary of node integers 
+                    # containing only scores for the non-positive and non-negative nodes
+                    #scores = np.array([scores[n] for n in pos_test])
+                    #test_scores[test_idx] = scores 
+                # the test positives will appear in a single fold
+                fold_scores = {n:scores[n] for n in pos_test}
+                # the unknowns will be in each fold, so append the fold number to those nodes
+                for n in pos_unknowns:
+                    fold_scores["%d-%d" % (n, fold)] = scores[n]
+                combined_fold_scores.update(fold_scores)
 
-    return params_results
+                prec, tpr, fpr = self.compute_eval_measures(pos_test, fold_scores)
+                fmax = self.compute_fmax(prec, tpr)
+                print("fold %d fmax: %0.3f" % (fold, fmax))
+                    
 
-#    # TODO run these separately because they have different parameters
-#    if alg == "sinksourceplus" or alg == "sinksource":
-#
-#        if alg == "sinksourceplus":
-#            scores, time, iters = sinksource.runSinkSource(H, pos_train, negatives=None, max_iters=1000, delta=eps, a=a)
-#        if alg == "sinksource":
-#            scores, time, iters = sinksource.runSinkSource(H, pos_train, negatives=negatives, max_iters=1000, delta=eps, a=a)
-##        params_key = (alg, goterm, '-', '-', '-', a, 'eps=%s'%str(eps))
-##        params_results[params_key] = (time, iters, '-')
-##
-##        print(params_results_to_table(params_results))
-##
-##        return params_results
-#
-#    else:
-#        print("Not yet implemented")
-#        return
+            # sort the combined scores by the score, and then compute the metrics on the combined scores
+            prec, tpr, fpr = self.compute_eval_measures(positives, combined_fold_scores)
+            fmax = self.compute_fmax(prec, tpr)
+            
+            tqdm.write("fmax: %0.3f" % (fmax))
+        #params_key = (alg, goterm, 'folds=5', '-', '-', a, 'eps=%s'%str(eps))
+        #params_results[params_key] = (time_diff, avg_iter_diff, '-')
+
+        return params_results
+
+
+    def compute_eval_measures(self, positives, scores):
+        """
+        Compute the precision and false-positive rate at each change in recall (true-positive rate)
+        """
+        #f1_score = metrics.f1score(positives, 
+        num_unknowns = len(scores) - len(positives) 
+        # compute the precision and recall at each change in recall
+        nodes_sorted_by_scores = sorted(scores, key=scores.get, reverse=True)
+        #print("computing the rank of positive nodes")
+        # this is really slow...
+        #pos_ranks = sorted([nodes_sorted_by_scores.index(p)+1 for p in positives])
+        #print("%d positives, %d pos_ranks" % (len(positives), len(pos_ranks)))
+        #print(pos_ranks)
+        #print([scores[s] for s in nodes_sorted_by_scores[:pos_ranks[0]+1]])
+        precision = []
+        recall = []
+        fpr = []
+        TP = 0
+        for P, n in enumerate(nodes_sorted_by_scores, 1):
+            # TODO this could be slow if there are many positives
+            if n in positives:
+                TP += 1
+                # precisions is the # of positives / # positives + # of false positives (or the total # of predictions)
+                # TP is the # of positives so far, and P is the # of predictions made so far
+                precision.append((TP / float(P)))
+                # recall is the # of recovered positives TP / TP + FN (total # of positives)
+                recall.append((TP / float(len(positives))))
+                # fpr is the FP / FP + TN
+                fpr.append((P - TP) / float(num_unknowns))
+
+        #print(precision[0], recall[0], fpr[0])
+
+        return precision, recall, fpr
+     
+    def compute_fmax(self, prec, rec):
+        f_measures = []
+        for i in range(len(prec)):
+            p, r = prec[i], rec[i]
+            harmonic_mean = (2*p*r)/(p+r)
+            f_measures.append(harmonic_mean)
+        return max(f_measures)
 
 
 def params_results_to_table(params_results):
@@ -624,6 +655,8 @@ def parse_args(args):
                       help="t parameter for Ripple. Default=2")
     parser.add_option('-s', '--s', type=int, action="append",
                       help="s parameter for Ripple. Default=200")
+    parser.add_option('-l', '--sinksourceplus-lambda', type=float, 
+                      help="lambda parameter to specify the weight connecting the unknowns to the negative 'ground' node. Default=None")
     parser.add_option('-a', '--alpha', type=float, action="append",
                       help="Alpha insulation parameter. Default=0.8")
     parser.add_option('', '--eps', type=float, action="append",
@@ -632,6 +665,8 @@ def parse_args(args):
                       help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
     parser.add_option('-W', '--num-pred-to-write', type='int', default=100,
                       help="Number of predictions to write to the file. If 0, none will be written. If -1, all will be written. Default=100")
+    parser.add_option('', '--only-cv', action="store_true", default=False,
+                      help="Perform cross-validation only")
     parser.add_option('-C', '--cross-validation-folds', type='int',
                       help="Perform cross validation using the specified # of folds. Usually 5")
     parser.add_option('', '--forcealg', action="store_true", default=False,
@@ -699,10 +734,11 @@ if __name__ == "__main__":
 
     alg_runner = Alg_Runner(opts.version, opts.exp_name,
          opts.pos_neg_file, goterms, opts.algorithm,
+         l=opts.sinksourceplus_lambda,
          k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=opts.alpha,
          eps_list=opts.eps, epsUB_list=opts.epsUB,
          num_pred_to_write=opts.num_pred_to_write,
-         cross_validation_folds=opts.cross_validation_folds,
+         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
          forcealg=opts.forcealg, verbose=opts.verbose)
     alg_runner.main()
     #main()
