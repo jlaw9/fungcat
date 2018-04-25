@@ -19,13 +19,11 @@ def runSinkSourceSqueeze(P, positives, negatives=None, k=100, a=0.8,
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
     #G = alg_utils.normalizeGraphEdgeWeights(G)
-    P = P.copy()
-    #print("Warning: deleting edges to positives in the original graph to speed up testing")
     P, f, int2int = alg_utils.setupScores(P, positives, negatives, a=a)
 
     if verbose:
         if negatives is not None:
-            print("\t%d positives, %d negatives, %d unknowns, k=%d, a=%, epsUB=%ss" \
+            print("\t%d positives, %d negatives, %d unknowns, k=%d, a=%s, epsUB=%s" \
                     % (len(positives), len(negatives), P.shape[0], k, str(a), str(epsUB)))
         else:
             print("\t%d positives, %d unknowns, k=%d, a=%s, epsUB=%s" \

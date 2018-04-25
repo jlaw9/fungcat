@@ -62,8 +62,6 @@ def runSinkSource(P, positives, negatives=None, max_iters=1000, delta=0.0001, a=
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
     #G = alg_utils.normalizeGraphEdgeWeights(G)
-    P = P.copy()
-
     P, f, int2int = alg_utils.setupScores(P, positives, negatives, a=a)
 
     s, time, iters, comp = SinkSource_scipy(P, f, max_iters=max_iters, delta=delta, a=a, scores=scores)
