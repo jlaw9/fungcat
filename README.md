@@ -11,3 +11,14 @@ ln -s /data/inputs/string string
 ```
 
 The Biorithm/GAIN package can be downloaded from https://bioinformatics.cs.vt.edu/~murali/software/biorithm/index.html
+
+The gain-scipy algorithms use the positive and negative examples for each GO term from the [go_term_prediction_examples.py](https://github.com/IGACAT/go_term_prediction_examples) script.
+
+Example call:
+```
+python src/igacat/go_term_prediction_examples/go_term_prediction_examples.py   \
+  --obo-file /data/inputs/goa/2017-09-26-go.obo   \
+  --gaf-file inputs/goa/taxon/19-strains-goa.gaf   \
+  --out-pref inputs/pos-neg/rem-neg-iea/2018-05-08- \
+  --rem-neg-ec IEA --cutoff 50 
+```
