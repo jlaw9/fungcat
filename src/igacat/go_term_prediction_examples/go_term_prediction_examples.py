@@ -337,7 +337,7 @@ def assign_all_pos_neg(high_freq_goids, G, revG, annotated_prots, all_prots, rem
     return goid_pos, goid_neg, goid_unk
 
 
-def build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk):
+def build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk, summary_only=False):
     """
     Builds a table with a positive/negative/unknown (1/-1/0) assignment for each gene-GO term pair. 
     Rows are the genes and columns are the given high_freq_goids (GO terms with > cutoff proteins annotated) 
@@ -347,6 +347,7 @@ def build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk):
     *goid_pos*: positive examples for each GO term
     *goid_neg*: negative examples for each GO term
     *goid_unk*: unknown examples for each GO term
+    *summary_only*: build and return only the summary table
 
     Returns:
     *df*: the table as a pandas DataFrame 
@@ -354,22 +355,22 @@ def build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk):
     """
     global id_to_name, name_to_id, goid_to_category
 
-    print("Building a table with positive/negative/unknown assignments for each protein-goterm pair")
+    if summary_only is False:
+        print("Building a table with positive/negative/unknown assignments for each protein-goterm pair")
+        # build a table with the first column being the genes, and a column for each of the terms with > cutoff annotations indicating 1/-1/0 assignment for each gene
+        pos_neg_table = defaultdict(dict)
+        # build a double dictionary with either 1, -1 or 0 for each GO term protein pair
+        # TODO there must be a better pandas method to construct the table
+        for goid in tqdm(high_freq_goids):
+            for prot in goid_pos[goid]:
+                pos_neg_table[goid][prot] = 1
+            for prot in goid_neg[goid]:
+                pos_neg_table[goid][prot] = -1
+            # unknowns are everything that is not a positive or negative
+            for prot in goid_unk[goid]:
+                pos_neg_table[goid][prot] = 0
 
-    # build a table with the first column being the genes, and a column for each of the terms with > cutoff annotations indicating 1/-1/0 assignment for each gene
-    pos_neg_table = defaultdict(dict)
-    # build a double dictionary with either 1, -1 or 0 for each GO term protein pair
-    # TODO there must be a better pandas method to construct the table
-    for goid in tqdm(high_freq_goids):
-        for prot in goid_pos[goid]:
-            pos_neg_table[goid][prot] = 1
-        for prot in goid_neg[goid]:
-            pos_neg_table[goid][prot] = -1
-        # unknowns are everything that is not a positive or negative
-        for prot in goid_unk[goid]:
-            pos_neg_table[goid][prot] = 0
-
-    df = pd.DataFrame(pos_neg_table)
+        df = pd.DataFrame(pos_neg_table)
 
     df_summary = pd.DataFrame({
         "GO term name": {goid: id_to_name[goid] for goid in high_freq_goids},
@@ -383,10 +384,14 @@ def build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk):
     df_summary = df_summary[cols] 
     df_summary.index.rename("GO term", inplace=True)
 
-    return df, df_summary
+    if summary_only is False:
+        return df, df_summary
+    else:
+        return df_summary
 
 
-def main(obo_file, gaf_file, out_pref, cutoff=1000, pos_neg_ec=[], rem_neg_ec=[], ignore_ec=[]):
+def main(obo_file, gaf_file, out_pref, cutoff=1000, write_table=False,
+        pos_neg_ec=[], rem_neg_ec=[], ignore_ec=[]):
     # first parse the gaf and obo files
     direct_prot_goids_by_c, direct_goid_prots, direct_goid_rem_neg_prots, all_prots = parse_gaf_file(
             gaf_file, pos_neg_ec, rem_neg_ec, ignore_ec)
@@ -417,16 +422,29 @@ def main(obo_file, gaf_file, out_pref, cutoff=1000, pos_neg_ec=[], rem_neg_ec=[]
         # keep track of the set of proteins with at least 1 annotation in this category to assign negatives later
         goid_pos, goid_neg, goid_unk = assign_all_pos_neg(high_freq_goids, G, revG, annotated_prots, all_prots, rem_negG=rem_negG)
 
-        # build a table containing a positive/negative/unknown assignment for each protein-goterm pair
-        df, df_summary = build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk)
-        # combine the summary stats for all categories into one table
-        df_summaries = pd.concat([df_summaries, df_summary])
-
         # now write it to a file
         category = {"C": "cc", "P": "bp", "F": "mf"}
-        out_file = "%spos-neg-%s-%d.tsv" % (out_pref, category[c], cutoff)
-        print("Writing table containing positive/negative/unknown assignments to %s" % (out_file))
-        df.to_csv(out_file, sep="\t")
+        if write_table is True:
+            # build a table containing a positive/negative/unknown assignment for each protein-goterm pair
+            df, df_summary = build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk)
+            # combine the summary stats for all categories into one table
+            df_summaries = pd.concat([df_summaries, df_summary])
+
+            out_file = "%spos-neg-%s-%d.tsv" % (out_pref, category[c], cutoff)
+            print("Writing table containing positive/negative/unknown assignments to %s" % (out_file))
+            df.to_csv(out_file, sep="\t")
+        else:
+            # build a summary table of the pos/neg/unk assignments
+            df_summary = build_pos_neg_table(high_freq_goids, goid_pos, goid_neg, goid_unk, summary_only=True)
+            # combine the summary stats for all categories into one table
+            df_summaries = pd.concat([df_summaries, df_summary])
+            out_file = "%spos-neg-%s-%d-list.tsv" % (out_pref, category[c], cutoff)
+            print("Writing file containing positive/negative assignments to %s" % (out_file))
+            with open(out_file, 'w') as out:
+                out.write("#goid\tpos/neg assignment\tprots\n")
+                for goid in high_freq_goids:
+                    out.write("%s\t1\t%s\n" % (goid, ','.join(goid_pos[goid])))
+                    out.write("%s\t-1\t%s\n" % (goid, ','.join(goid_neg[goid])))
 
     output_summary_file = "%spos-neg-%d-summary-stats.tsv" % (out_pref, cutoff)
     # maybe make this into an option later instead of always writing it
@@ -456,6 +474,10 @@ and the columns are GO term IDs. Also writes a summary statistics table
     parser.add_option('-o', '--out-pref', type='string', 
                       help="Prefix used to write a table of positives, negatives, and unknowns for each GO category." +
                       "Writes an output file for BP and MF: <out-pref>pos-neg-<cutoff>-P.tsv and <out-pref>pos-neg-<cutoff>-F.tsv")
+    # writing the big pos/neg/unk assignment matrix is taking too long. 
+    # instead, write the pos/neg prots for each GO term to a file
+    parser.add_option('', '--write-table', action='store_true', default=False,
+                      help="write the pos/neg/unk assignments to a table rather than the default comma-separated list of prots")
     parser.add_option('', '--pos-neg-ec', type='string',
                       help="Comma-separated list of evidence codes used to assign positive and negative examples. " +
                       "If none are specified, all codes not in the two other categories " + 
@@ -498,9 +520,10 @@ and the columns are GO term IDs. Also writes a summary statistics table
 
 
 if __name__ == "__main__":
+    print("Running %s" % (' '.join(sys.argv)))
     opts, args = parse_args(sys.argv)
     pos_neg_ec = [] if opts.pos_neg_ec is None else opts.pos_neg_ec.split(',') 
     rem_neg_ec = [] if opts.rem_neg_ec is None else opts.rem_neg_ec.split(',') 
     ignore_ec = [] if opts.ignore_ec is None else opts.ignore_ec.split(',') 
-    main(opts.obo_file, opts.gaf_file, opts.out_pref, cutoff=opts.cutoff, 
+    main(opts.obo_file, opts.gaf_file, opts.out_pref, cutoff=opts.cutoff, write_table=opts.write_table,
          pos_neg_ec=pos_neg_ec, rem_neg_ec=rem_neg_ec, ignore_ec=ignore_ec)
