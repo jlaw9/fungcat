@@ -79,42 +79,19 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
         E = get_top_s_boundary_nodes(B, LBs, s)
 
         # Update nodes in N and B
-        N, B, F = update_N_B_F(P, N, B, E, F)
-        Fl = np.array(list(F))
+        # Updating using the node neighbors is slightly faster 
+        # for some GO terms with a small # of annotations (like 0.05 sec),
+        # but is 2-4x slower for GO terms with a large # of annotations
+        #N, B, F = update_N_B_F(P, node_neighbors, N, B, E, F)
+        N, B, F = update_N_B_F_matrix(P, N, B, E, F)
 
         update_time = time.time()
-        #print("\t\tGetting subnetwork")
-        N_arr = np.array(list(N))
-        # get the new vicinity (N) subnetwork of P
-        #P_N = alg_utils.select_nodes(P, N_arr)
-        # TODO instead of getting a submatrix set node scores not in vicinity to 0
-        #P_N = P[N_arr,:][:,N_arr]
-        #prev_LBs_N = prev_LBs[N_arr]
-        #prev_LBs_N = prev_LBs.copy()
-        #prev_LBs[list(F)] = 0
-        ##LBs_N = LBs[N]
-        #f_N = f[N_arr]
-        f_N = f
-        #print("\t\tupdating")
-        #total_comp += len(P_N.data) * t
+        # 2-4x faster for GO terms with a large # of annotations
+        #LBs, prev_LBs, delta_N, comp = update_scores_full(P, f, N, F, LBs, prev_LBs, a, t)
+        # 2x faster for GO terms with a small # of annotations (sinksourceplus)
+        LBs, prev_LBs, delta_N, comp = update_scores_submatrix(P, f, N, LBs, prev_LBs, a, t)
+        total_comp += comp
 
-        # update the scores of nodes in N t times
-        for i in range(t):
-            #LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
-            LBs = a*csr_matrix.dot(P, prev_LBs) + f_N
-
-            LBs[Fl] = 0
-            if i == 0:
-                # find the largest score difference after 1 iteration
-                #delta_N = (LBs_N - prev_LBs_N).max()
-                delta_N = (LBs - prev_LBs).max()
-
-            prev_LBs = LBs.copy()
-            #prev_LBs_N = LBs_N.copy()
-            #for n in range(len(N)):
-            #    prev_LBs_N[n] = LBs_N[n]
-        #LBs[N_arr] = LBs_N
-        #prev_LBs[N_arr] = prev_LBs_N
         print("\t\t%0.2f sec to update bounds. delta_N: %0.4f" % (time.time() - update_time, delta_N))
         max_d_list.append(delta_N) 
 
@@ -141,6 +118,7 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
             print("\t\tF_UB: %0.4f, N_UB: %0.4f" % (F_UB, N_UB))
             continue
 
+        N_arr = np.array(list(N))
         # now check to see if there are nodes that no longer are eligible for the top-k
         # and if there are, remove them from R
         #R = R - set(np.where(UBs[not_topk] - epsUB < k_score)[0])
@@ -154,6 +132,68 @@ def SinkSourceRipple(P, f, k=100, t=2, s=2, a=0.8, epsUB=0):
     print("SinkSourcePlusTopK found top k after %d iterations (%0.2f sec)" % (num_iters, total_time))
 
     return R, LBs, total_time, num_iters, total_comp, len(N), max_d_list
+
+
+def update_scores_full(P, f, N, F, LBs, prev_LBs, a, t):
+    Fl = np.array(list(F))
+
+    #print("\t\tGetting subnetwork")
+    # get the new vicinity (N) subnetwork of P
+    #P_N = alg_utils.select_nodes(P, N_arr)
+    #P_N = P[N_arr,:][:,N_arr]
+    #prev_LBs_N = prev_LBs[N_arr]
+    #prev_LBs_N = prev_LBs.copy()
+    #prev_LBs[list(F)] = 0
+    ##LBs_N = LBs[N]
+    #f_N = f[N_arr]
+    f_N = f
+    #print("\t\tupdating")
+    # TODO figure out how to count the # of non-zero multiplications
+    #comp = len(P_N.data) * t
+    comp = 0
+
+    # update the scores of nodes in N t times
+    for i in range(t):
+        #LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
+        LBs = a*csr_matrix.dot(P, prev_LBs) + f_N
+
+        LBs[Fl] = 0
+        if i == 0:
+            # find the largest score difference after 1 iteration
+            delta_N = (LBs - prev_LBs).max()
+
+        prev_LBs = LBs.copy()
+        #prev_LBs_N = LBs_N.copy()
+
+    return LBs, prev_LBs, delta_N, comp
+
+
+def update_scores_submatrix(P, f, N, LBs, prev_LBs, a, t):
+    #print("\t\tGetting subnetwork")
+    N_arr = np.array(list(N))
+    # get the new vicinity (N) subnetwork of P
+    P_N = alg_utils.select_nodes(P, N_arr)
+    P_N = P[N_arr,:][:,N_arr]
+    prev_LBs_N = prev_LBs[N_arr]
+    f_N = f[N_arr]
+    #print("\t\tupdating")
+    comp = len(P_N.data) * t
+
+    # update the scores of nodes in N t times
+    for i in range(t):
+        LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
+
+        if i == 0:
+            # find the largest score difference after 1 iteration
+            delta_N = (LBs_N - prev_LBs_N).max()
+
+        prev_LBs_N = LBs_N.copy()
+        #for n in range(len(N)):
+        #    prev_LBs_N[n] = LBs_N[n]
+    LBs[N_arr] = LBs_N
+    prev_LBs[N_arr] = prev_LBs_N
+
+    return LBs, prev_LBs, delta_N, comp
 
 
 def computeHopUB(max_boundary_score, a, t, delta_N, h=0):
@@ -249,7 +289,7 @@ def get_top_s_boundary_nodes(B, LBs, s):
 #@profile
 # TODO this function takes ~1/2 of the total running time
 # I don't think there's anything else I can do to speed it up
-def update_N_B_F(P, N, B, E, F, verbose=True):
+def update_N_B_F_matrix(P, N, B, E, F, verbose=True):
     """
     Updates B and N in place to contain the additional nodes in E
     B is updated to be the nodes in N that have neighbors in F
@@ -280,6 +320,46 @@ def update_N_B_F(P, N, B, E, F, verbose=True):
 
     return N, B, F
 
+
+# TODO figure out which one is faster
+def update_N_B_F(P, node_neighbors, N, B, E, F, verbose=True):
+    """
+    Updates B and N in place to contain the additional nodes in E
+    B is updated to be the nodes in N that have neighbors in F
+    """
+    # all of E's neighbors will be added, so they will no longer be boundary nodes
+    B.difference_update(E)
+    prev_size_N = len(N)
+    new_neighbors = set()
+    for u in E:
+        new_neighbors.update(node_neighbors[u]) 
+        # add u's neighbors to N
+        #N.update(node_neighbors[u])
+
+    N.update(new_neighbors)
+    # remove false positives in the loop below
+    B.update(new_neighbors)
+    # Update F to remove the new nodes in N
+    F = F - N
+
+    prev_size_B = len(B)
+    # loop through the boundary nodes and newly added nodes to see 
+    # which of them are boundary nodes
+    for u in B.copy():
+        boundary_node = False
+        for i in node_neighbors[u]:
+            if i not in N:
+                boundary_node = True 
+                B.add(u)
+                break
+        if not boundary_node: 
+            B.discard(u)
+#    B = get_boundary_nodes(node_neighbors, N)
+    if verbose is True:
+        print("\t\t|E|: %d, num_neighbors added: %d, num B removed: %d" % (
+            len(E), len(N) - prev_size_N, prev_size_B - len(B)))
+
+    return N, B, F
 
 def get_boundary_nodes(node_neighbors, N):
     #print("\t\tGetting boundary nodes")
