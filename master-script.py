@@ -157,7 +157,7 @@ def setup_network(selected_strains, forced=False):
                 append_network_to_file(f_settings.SEQ_SIM_NETWORKS[VERSION], NETWORK, selected_strains=selected_strains)
             else:
                 print("Adding a symbolic link from %s to %s" % (f_settings.SEQ_SIM_NETWORKS[VERSION],NETWORK))
-                os.symlink(f_settings.SEQ_SIM_NETWORKS[VERSION],NETWORK)
+                os.symlink("../../%s" % (f_settings.SEQ_SIM_NETWORKS[VERSION]),NETWORK)
 
 
 def append_network_to_file(network_file, out_network_file, selected_strains=None, mod_weight=None):
