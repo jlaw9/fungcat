@@ -1,0 +1,100 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+5976	polysaccharide metabolic process	P	230	10341	51275
+6081	cellular aldehyde metabolic process	P	205	10394	51247
+6091	generation of precursor metabolites and energy	P	304	10295	51247
+6163	purine nucleotide metabolic process	P	277	10282	51287
+6259	DNA metabolic process	P	495	10076	51275
+6281	DNA repair	P	229	10108	51509
+6364	rRNA processing	P	228	10314	51304
+6396	RNA processing	P	434	10132	51280
+6399	tRNA metabolic process	P	341	10225	51280
+6412	translation	P	268	10310	51268
+6464	cellular protein modification process	P	326	10258	51262
+6518	peptide metabolic process	P	363	10223	51260
+6631	fatty acid metabolic process	P	251	10314	51281
+6732	coenzyme metabolic process	P	445	10154	51247
+6753	nucleoside phosphate metabolic process	P	456	10103	51287
+6766	vitamin metabolic process	P	202	10397	51247
+6790	sulfur compound metabolic process	P	373	10226	51247
+6812	cation transport	P	402	10044	51400
+6820	anion transport	P	408	10042	51396
+6974	cellular response to DNA damage stimulus	P	486	10109	51251
+6979	response to oxidative stress	P	206	10390	51250
+8104	protein localization	P	253	10347	51246
+8610	lipid biosynthetic process	P	414	10157	51275
+8643	carbohydrate transport	P	215	10236	51395
+9108	coenzyme biosynthetic process	P	296	10302	51248
+9117	nucleotide metabolic process	P	445	10114	51287
+9150	purine ribonucleotide metabolic process	P	245	10304	51297
+9165	nucleotide biosynthetic process	P	245	10313	51288
+9259	ribonucleotide metabolic process	P	276	10282	51288
+9451	RNA modification	P	376	10190	51280
+9605	response to external stimulus	P	364	10236	51246
+9607	response to biotic stimulus	P	200	10400	51246
+9628	response to abiotic stimulus	P	343	10257	51246
+9890	negative regulation of biosynthetic process	P	285	10313	51248
+9892	negative regulation of metabolic process	P	337	10261	51248
+9893	positive regulation of metabolic process	P	220	10377	51249
+10035	response to inorganic substance	P	336	10264	51246
+10038	response to metal ion	P	250	10350	51246
+10558	negative regulation of macromolecule biosynthetic process	P	262	10336	51248
+10605	negative regulation of macromolecule metabolic process	P	311	10287	51248
+10629	negative regulation of gene expression	P	275	10307	51264
+15031	protein transport	P	231	10182	51433
+15711	organic anion transport	P	315	10124	51407
+15833	peptide transport	P	303	10130	51413
+15849	organic acid transport	P	272	10181	51393
+15980	energy derivation by oxidation of organic compounds	P	207	10309	51330
+16051	carbohydrate biosynthetic process	P	361	10208	51277
+16052	carbohydrate catabolic process	P	246	10299	51301
+16054	organic acid catabolic process	P	371	10196	51279
+16072	rRNA metabolic process	P	239	10327	51280
+19439	aromatic compound catabolic process	P	270	10307	51269
+19693	ribose phosphate metabolic process	P	314	10273	51259
+22607	cellular component assembly	P	416	10184	51246
+31324	negative regulation of cellular metabolic process	P	295	10303	51248
+31327	negative regulation of cellular biosynthetic process	P	272	10326	51248
+32259	methylation	P	214	10385	51247
+32774	RNA biosynthetic process	P	222	10343	51281
+33036	macromolecule localization	P	253	10347	51246
+34220	ion transmembrane transport	P	245	10100	51501
+34470	ncRNA processing	P	404	10142	51300
+36211	protein modification process	P	326	10258	51262
+40011	locomotion	P	246	10354	51246
+42886	amide transport	P	315	10120	51411
+43043	peptide biosynthetic process	P	324	10256	51266
+43207	response to external biotic stimulus	P	200	10400	51246
+43604	amide biosynthetic process	P	466	10120	51260
+43648	dicarboxylic acid metabolic process	P	248	10350	51248
+43933	macromolecular complex subunit organization	P	277	10323	51246
+44262	cellular carbohydrate metabolic process	P	361	10210	51275
+44264	cellular polysaccharide metabolic process	P	209	10341	51296
+44270	cellular nitrogen compound catabolic process	P	302	10264	51280
+44272	sulfur compound biosynthetic process	P	202	10373	51271
+44419	interspecies interaction between organisms	P	370	10230	51246
+45184	establishment of protein localization	P	245	10355	51246
+45934	negative regulation of nucleobase-containing compound metabolic process	P	226	10371	51249
+46395	carboxylic acid catabolic process	P	371	10195	51280
+46700	heterocycle catabolic process	P	269	10309	51268
+46942	carboxylic acid transport	P	272	10156	51418
+48518	positive regulation of biological process	P	334	10265	51247
+48519	negative regulation of biological process	P	451	10147	51248
+48522	positive regulation of cellular process	P	240	10356	51250
+48523	negative regulation of cellular process	P	356	10242	51248
+51172	negative regulation of nitrogen compound metabolic process	P	288	10309	51249
+51188	cofactor biosynthetic process	P	496	10103	51247
+51253	negative regulation of RNA metabolic process	P	204	10392	51250
+51707	response to other organism	P	200	10400	51246
+55114	oxidation-reduction process	P	429	10170	51247
+65003	macromolecular complex assembly	P	241	10359	51246
+65008	regulation of biological quality	P	285	10313	51248
+70887	cellular response to chemical stimulus	P	304	10296	51246
+72521	purine-containing compound metabolic process	P	323	10262	51261
+90407	organophosphate biosynthetic process	P	474	10117	51255
+1901293	nucleoside phosphate biosynthetic process	P	247	10311	51288
+1901361	organic cyclic compound catabolic process	P	314	10257	51275
+1901565	organonitrogen compound catabolic process	P	437	10123	51286
+1901607	alpha-amino acid biosynthetic process	P	460	10109	51277
+1901615	organic hydroxy compound metabolic process	P	307	10292	51247
+1901657	glycosyl compound metabolic process	P	200	10398	51248
+2000113	negative regulation of cellular macromolecule biosynthetic process	P	262	10336	51248

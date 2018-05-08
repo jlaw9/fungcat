@@ -1,0 +1,21 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+166	nucleotide binding	F	508	10001	51337
+1071	nucleic acid binding transcription factor activity	F	714	9795	51337
+3677	DNA binding	F	783	9724	51339
+3700	transcription factor activity, sequence-specific DNA binding	F	710	9799	51337
+15075	ion transmembrane transporter activity	F	678	9550	51618
+16462	pyrophosphatase activity	F	699	9651	51496
+16772	transferase activity, transferring phosphorus-containing groups	F	930	9479	51437
+16788	hydrolase activity, acting on ester bonds	F	664	9694	51488
+16817	hydrolase activity, acting on acid anhydrides	F	707	9644	51495
+16818	hydrolase activity, acting on acid anhydrides, in phosphorus-containing anhydrides	F	707	9644	51495
+16829	lyase activity	F	677	9745	51424
+16887	ATPase activity	F	548	9792	51506
+17111	nucleoside-triphosphatase activity	F	613	9733	51500
+22804	active transmembrane transporter activity	F	633	9657	51556
+36094	small molecule binding	F	742	9767	51337
+43168	anion binding	F	688	9821	51337
+43169	cation binding	F	713	9796	51337
+46872	metal ion binding	F	680	9828	51338
+140098	catalytic activity, acting on RNA	F	577	9845	51424
+1901265	nucleoside phosphate binding	F	508	10001	51337

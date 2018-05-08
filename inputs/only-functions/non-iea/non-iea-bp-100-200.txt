@@ -1,0 +1,155 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+96	sulfur amino acid metabolic process	P	111	10437	51298
+154	rRNA modification	P	171	10328	51347
+160	phosphorelay signal transduction system	P	124	10439	51283
+270	peptidoglycan metabolic process	P	125	10460	51261
+271	polysaccharide biosynthetic process	P	192	10371	51283
+1510	RNA methylation	P	139	10341	51366
+1539	cilium or flagellum-dependent cell motility	P	110	10485	51251
+2790	peptide secretion	P	160	10246	51440
+5996	monosaccharide metabolic process	P	181	10389	51276
+6022	aminoglycan metabolic process	P	134	10451	51261
+6066	alcohol metabolic process	P	119	10480	51247
+6164	purine nucleotide biosynthetic process	P	136	10413	51297
+6351	transcription, DNA-templated	P	177	10387	51282
+6400	tRNA modification	P	182	10319	51345
+6418	tRNA aminoacylation for protein translation	P	123	10411	51312
+6461	protein complex assembly	P	120	10480	51246
+6508	proteolysis	P	132	10452	51262
+6525	arginine metabolic process	P	107	10465	51274
+6575	cellular modified amino acid metabolic process	P	136	10450	51260
+6576	cellular biogenic amine metabolic process	P	124	10462	51260
+6633	fatty acid biosynthetic process	P	112	10404	51330
+6644	phospholipid metabolic process	P	153	10401	51292
+6733	oxidoreduction coenzyme metabolic process	P	170	10429	51247
+6767	water-soluble vitamin metabolic process	P	195	10404	51247
+6865	amino acid transport	P	197	10198	51451
+6928	movement of cell or subcellular component	P	135	10465	51246
+6935	chemotaxis	P	115	10485	51246
+7154	cell communication	P	155	10445	51246
+7165	signal transduction	P	173	10425	51248
+8033	tRNA processing	P	193	10342	51311
+8654	phospholipid biosynthetic process	P	140	10378	51328
+9057	macromolecule catabolic process	P	192	10380	51274
+9063	cellular amino acid catabolic process	P	187	10357	51302
+9064	glutamine family amino acid metabolic process	P	189	10385	51272
+9066	aspartate family amino acid metabolic process	P	173	10400	51273
+9069	serine family amino acid metabolic process	P	125	10447	51274
+9072	aromatic amino acid family metabolic process	P	140	10430	51276
+9073	aromatic amino acid family biosynthetic process	P	126	10436	51284
+9084	glutamine family amino acid biosynthetic process	P	112	10452	51282
+9110	vitamin biosynthetic process	P	186	10413	51247
+9116	nucleoside metabolic process	P	176	10384	51286
+9119	ribonucleoside metabolic process	P	138	10422	51286
+9123	nucleoside monophosphate metabolic process	P	150	10409	51287
+9126	purine nucleoside monophosphate metabolic process	P	134	10425	51287
+9141	nucleoside triphosphate metabolic process	P	184	10375	51287
+9144	purine nucleoside triphosphate metabolic process	P	153	10405	51288
+9152	purine ribonucleotide biosynthetic process	P	132	10413	51301
+9161	ribonucleoside monophosphate metabolic process	P	138	10421	51287
+9167	purine ribonucleoside monophosphate metabolic process	P	134	10425	51287
+9199	ribonucleoside triphosphate metabolic process	P	143	10415	51288
+9205	purine ribonucleoside triphosphate metabolic process	P	133	10425	51288
+9260	ribonucleotide biosynthetic process	P	151	10406	51289
+9266	response to temperature stimulus	P	103	10497	51246
+9306	protein secretion	P	160	10226	51460
+9308	amine metabolic process	P	129	10458	51259
+9311	oligosaccharide metabolic process	P	155	10412	51279
+9312	oligosaccharide biosynthetic process	P	131	10435	51280
+9401	phosphoenolpyruvate-dependent sugar phosphotransferase system	P	146	10296	51404
+9405	pathogenesis	P	197	10403	51246
+9891	positive regulation of biosynthetic process	P	179	10416	51251
+9991	response to extracellular stimulus	P	175	10425	51246
+10039	response to iron ion	P	168	10430	51248
+10557	positive regulation of macromolecule biosynthetic process	P	164	10431	51251
+10604	positive regulation of macromolecule metabolic process	P	192	10403	51251
+10608	posttranscriptional regulation of gene expression	P	104	10478	51264
+10628	positive regulation of gene expression	P	170	10411	51265
+15672	monovalent inorganic cation transport	P	142	10295	51409
+16042	lipid catabolic process	P	156	10389	51301
+16310	phosphorylation	P	184	10404	51258
+19362	pyridine nucleotide metabolic process	P	130	10429	51287
+19725	cellular homeostasis	P	170	10428	51248
+22618	ribonucleoprotein complex assembly	P	120	10480	51246
+30001	metal ion transport	P	137	10300	51409
+30203	glycosaminoglycan metabolic process	P	127	10458	51261
+31167	rRNA methylation	P	107	10322	51417
+31325	positive regulation of cellular metabolic process	P	198	10397	51251
+31328	positive regulation of cellular biosynthetic process	P	170	10425	51251
+31667	response to nutrient levels	P	106	10494	51246
+31668	cellular response to extracellular stimulus	P	152	10448	51246
+32268	regulation of cellular protein metabolic process	P	127	10470	51249
+32879	regulation of localization	P	131	10467	51248
+32940	secretion by cell	P	162	10285	51399
+33013	tetrapyrrole metabolic process	P	105	10480	51261
+33014	tetrapyrrole biosynthetic process	P	101	10483	51262
+33692	cellular polysaccharide biosynthetic process	P	182	10358	51306
+34248	regulation of cellular amide metabolic process	P	106	10491	51249
+34622	cellular macromolecular complex assembly	P	152	10448	51246
+34637	cellular carbohydrate biosynthetic process	P	198	10358	51290
+34655	nucleobase-containing compound catabolic process	P	195	10341	51310
+35556	intracellular signal transduction	P	126	10438	51282
+42180	cellular ketone metabolic process	P	160	10439	51247
+42330	taxis	P	115	10485	51246
+42364	water-soluble vitamin biosynthetic process	P	179	10420	51247
+42592	homeostatic process	P	190	10408	51248
+43038	amino acid activation	P	137	10434	51275
+43039	tRNA aminoacylation	P	136	10407	51303
+43414	macromolecule methylation	P	159	10385	51302
+44036	cell wall macromolecule metabolic process	P	111	10488	51247
+44038	cell wall macromolecule biosynthetic process	P	105	10491	51250
+44106	cellular amine metabolic process	P	127	10459	51260
+44242	cellular lipid catabolic process	P	135	10394	51317
+44265	cellular macromolecule catabolic process	P	114	10453	51279
+44764	multi-organism cellular process	P	115	10485	51246
+45333	cellular respiration	P	151	10365	51330
+45892	negative regulation of transcription, DNA-templated	P	198	9867	51781
+45893	positive regulation of transcription, DNA-templated	P	139	9927	51780
+45935	positive regulation of nucleobase-containing compound metabolic process	P	150	10444	51252
+46390	ribose phosphate biosynthetic process	P	156	10431	51259
+46496	nicotinamide nucleotide metabolic process	P	130	10429	51287
+46677	response to antibiotic	P	125	10475	51246
+46903	secretion	P	166	10285	51395
+48870	cell motility	P	135	10465	51246
+48878	chemical homeostasis	P	127	10471	51248
+51128	regulation of cellular component organization	P	120	10478	51248
+51173	positive regulation of nitrogen compound metabolic process	P	190	10404	51252
+51246	regulation of protein metabolic process	P	134	10463	51249
+51254	positive regulation of RNA metabolic process	P	142	10451	51253
+51604	protein maturation	P	113	10471	51262
+51701	interaction with host	P	184	10416	51246
+52173	response to defenses of other organism involved in symbiotic interaction	P	132	10468	51246
+52200	response to host defenses	P	132	10459	51255
+52564	response to immune response of other organism involved in symbiotic interaction	P	132	10468	51246
+52572	response to host immune response	P	132	10459	51255
+55082	cellular chemical homeostasis	P	119	10479	51248
+65009	regulation of molecular function	P	108	10491	51247
+70589	cellular component macromolecule biosynthetic process	P	105	10494	51247
+71241	cellular response to inorganic substance	P	181	10419	51246
+71248	cellular response to metal ion	P	172	10426	51248
+71281	cellular response to iron ion	P	153	10435	51258
+71496	cellular response to external stimulus	P	152	10448	51246
+71806	protein transmembrane transport	P	160	10131	51555
+71822	protein complex subunit organization	P	147	10453	51246
+71826	ribonucleoprotein complex subunit organization	P	130	10470	51246
+71973	bacterial-type flagellum-dependent cell motility	P	110	10485	51251
+72329	monocarboxylic acid catabolic process	P	183	10383	51280
+72330	monocarboxylic acid biosynthetic process	P	189	10409	51248
+72522	purine-containing compound biosynthetic process	P	152	10432	51262
+72524	pyridine-containing compound metabolic process	P	171	10415	51260
+72527	pyrimidine-containing compound metabolic process	P	182	10404	51260
+72528	pyrimidine-containing compound biosynthetic process	P	123	10463	51260
+75136	response to host	P	144	10456	51246
+97588	archaeal or bacterial-type flagellum-dependent cell motility	P	110	10485	51251
+97659	nucleic acid-templated transcription	P	177	10387	51282
+98655	cation transmembrane transport	P	163	10169	51514
+98660	inorganic ion transmembrane transport	P	154	10182	51510
+98662	inorganic cation transmembrane transport	P	124	10203	51519
+1901136	carbohydrate derivative catabolic process	P	150	10420	51276
+1901606	alpha-amino acid catabolic process	P	182	10359	51305
+1901700	response to oxygen-containing compound	P	165	10435	51246
+1902679	negative regulation of RNA biosynthetic process	P	198	10398	51250
+1902680	positive regulation of RNA biosynthetic process	P	139	10452	51255
+1903507	negative regulation of nucleic acid-templated transcription	P	198	10377	51271
+1903508	positive regulation of nucleic acid-templated transcription	P	139	10431	51276
+1903509	liposaccharide metabolic process	P	151	10418	51277

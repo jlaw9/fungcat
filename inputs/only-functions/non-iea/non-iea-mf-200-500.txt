@@ -1,0 +1,60 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+287	magnesium ion binding	F	240	10214	51392
+975	regulatory region DNA binding	F	359	9955	51532
+976	transcription regulatory region sequence-specific DNA binding	F	288	9804	51754
+1067	regulatory region nucleic acid binding	F	359	10147	51340
+3690	double-stranded DNA binding	F	343	9971	51532
+3723	RNA binding	F	329	10177	51340
+3735	structural constituent of ribosome	F	360	10115	51371
+4518	nuclease activity	F	239	10099	51508
+5198	structural molecule activity	F	395	10114	51337
+5342	organic acid transmembrane transporter activity	F	261	9959	51626
+8168	methyltransferase activity	F	314	10089	51443
+8233	peptidase activity	F	230	10121	51495
+8324	cation transmembrane transporter activity	F	403	9817	51626
+8509	anion transmembrane transporter activity	F	327	9888	51631
+8514	organic anion transmembrane transporter activity	F	272	9943	51631
+8757	S-adenosylmethionine-dependent methyltransferase activity	F	268	10133	51445
+15144	carbohydrate transmembrane transporter activity	F	250	9967	51629
+15291	secondary active transmembrane transporter activity	F	224	10058	51564
+15399	primary active transmembrane transporter activity	F	320	9964	51562
+15405	P-P-bond-hydrolysis-driven transmembrane transporter activity	F	315	9968	51563
+16301	kinase activity	F	441	9960	51445
+16614	oxidoreductase activity, acting on CH-OH group of donors	F	260	10009	51577
+16616	oxidoreductase activity, acting on the CH-OH group of donors, NAD or NADP as acceptor	F	225	10042	51579
+16741	transferase activity, transferring one-carbon groups	F	360	10043	51443
+16746	transferase activity, transferring acyl groups	F	344	10064	51438
+16747	transferase activity, transferring acyl groups other than amino-acyl groups	F	310	10096	51440
+16757	transferase activity, transferring glycosyl groups	F	298	10107	51441
+16773	phosphotransferase activity, alcohol group as acceptor	F	370	10031	51445
+16779	nucleotidyltransferase activity	F	251	10150	51445
+16810	hydrolase activity, acting on carbon-nitrogen (but not peptide) bonds	F	231	10122	51493
+16820	hydrolase activity, acting on acid anhydrides, catalyzing transmembrane movement of substances	F	301	9824	51721
+16830	carbon-carbon lyase activity	F	236	10184	51426
+16835	carbon-oxygen lyase activity	F	328	10091	51427
+16836	hydro-lyase activity	F	263	10154	51429
+16853	isomerase activity	F	383	10038	51425
+16874	ligase activity	F	386	10035	51425
+17076	purine nucleotide binding	F	259	10246	51341
+22890	inorganic cation transmembrane transporter activity	F	251	9961	51634
+30554	adenyl nucleotide binding	F	209	10296	51341
+32553	ribonucleotide binding	F	305	10200	51341
+32555	purine ribonucleotide binding	F	247	10258	51341
+35639	purine ribonucleoside triphosphate binding	F	226	10281	51339
+42578	phosphoric ester hydrolase activity	F	255	10088	51503
+42623	ATPase activity, coupled	F	484	9792	51570
+42626	ATPase activity, coupled to transmembrane movement of substances	F	301	9725	51820
+42802	identical protein binding	F	425	9024	52397
+43492	ATPase activity, coupled to movement of substances	F	303	9951	51592
+43565	sequence-specific DNA binding	F	459	9866	51521
+44212	transcription regulatory region DNA binding	F	359	9955	51532
+46914	transition metal ion binding	F	411	10045	51390
+46943	carboxylic acid transmembrane transporter activity	F	260	9955	51631
+48037	cofactor binding	F	432	10077	51337
+50662	coenzyme binding	F	228	10277	51341
+97367	carbohydrate derivative binding	F	335	10174	51337
+140096	catalytic activity, acting on a protein	F	471	9952	51423
+140097	catalytic activity, acting on DNA	F	292	10129	51425
+140101	catalytic activity, acting on a tRNA	F	269	10153	51424
+1901476	carbohydrate transporter activity	F	250	10126	51470
+1990837	sequence-specific double-stranded DNA binding	F	311	9851	51684

@@ -1,0 +1,9 @@
+#ID	goname	hierarchy	num_prots
+44271	cellular nitrogen compound biosynthetic process	P	1360
+18130	heterocycle biosynthetic process	P	1061
+90304	nucleic acid metabolic process	P	1429
+1901362	organic cyclic compound biosynthetic process	P	1136
+71702	organic substance transport	P	1043
+1901566	organonitrogen compound biosynthetic process	P	1610
+19752	carboxylic acid metabolic process	P	1671
+

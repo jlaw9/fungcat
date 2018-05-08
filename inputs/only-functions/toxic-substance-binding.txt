@@ -1,0 +1,2 @@
+#ID	goname	hierarchy	num_prots
+15643	toxic substance binding	f	29

@@ -1,0 +1,19 @@
+#ID	goname	hierarchy	num_prots
+22804	active transmembrane transporter activity	f	685
+166	nucleotide binding	f	10496	539
+3690	double-stranded DNA binding	f	449
+31324	negative regulation of cellular metabolic process	p	469
+7165	signal transduction	p	267
+15031	protein transport	p	267
+9405	pathogenesis	p	208
+5524	ATP binding	f	201
+4871	signal transducer activity	f	197
+46903	secretion	p	175
+1217	bacterial-type RNA polymerase transcriptional repressor activity, sequence-specific DNA binding	f	138
+4872	receptor activity	f	137
+9636	response to toxic substance	p	133
+98754	detoxification	p	124
+45927	positive regulation of growth	p	47
+4521	endoribonuclease activity	f	62
+17148	negative regulation of translation	p	58
+9404	toxin metabolic process	p	12

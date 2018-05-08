@@ -1,0 +1,58 @@
+#ID	goname	hierarchy	num_prots
+6082	organic acid metabolic process	P	1706
+6139	nucleobase-containing compound metabolic process	P	2076
+6725	cellular aromatic compound metabolic process	P	2562
+6807	nitrogen compound metabolic process	P	4144
+6810	transport	P	1652
+6950	response to stress	P	1034
+8152	metabolic process	P	6112
+9056	catabolic process	P	1203
+9058	biosynthetic process	P	2790
+9987	cellular process	P	7001
+18130	heterocycle biosynthetic process	P	1061
+19222	regulation of metabolic process	P	1124
+19752	carboxylic acid metabolic process	P	1671
+31323	regulation of cellular metabolic process	P	1054
+34641	cellular nitrogen compound metabolic process	P	3003
+43170	macromolecule metabolic process	P	2597
+43436	oxoacid metabolic process	P	1702
+44237	cellular metabolic process	P	5512
+44238	primary metabolic process	P	4693
+44249	cellular biosynthetic process	P	2657
+44260	cellular macromolecule metabolic process	P	2331
+44271	cellular nitrogen compound biosynthetic process	P	1360
+44281	small molecule metabolic process	P	2615
+44283	small molecule biosynthetic process	P	1027
+46483	heterocycle metabolic process	P	2570
+50789	regulation of biological process	P	1598
+50794	regulation of cellular process	P	1398
+50896	response to stimulus	P	1704
+51171	regulation of nitrogen compound metabolic process	P	1021
+51179	localization	P	1691
+51234	establishment of localization	P	1668
+60255	regulation of macromolecule metabolic process	P	1045
+65007	biological regulation	P	1798
+71702	organic substance transport	P	1043
+71704	organic substance metabolic process	P	5643
+80090	regulation of primary metabolic process	P	1051
+90304	nucleic acid metabolic process	P	1429
+1901360	organic cyclic compound metabolic process	P	2705
+1901362	organic cyclic compound biosynthetic process	P	1136
+1901564	organonitrogen compound metabolic process	P	2795
+1901566	organonitrogen compound biosynthetic process	P	1610
+1901575	organic substance catabolic process	P	1136
+1901576	organic substance biosynthetic process	P	2720
+3676	nucleic acid binding	F	1104
+3824	catalytic activity	F	6701
+5215	transporter activity	F	1649
+5488	binding	F	3664
+5515	protein binding	F	1573
+16491	oxidoreductase activity	F	1184
+16740	transferase activity	F	2289
+16787	hydrolase activity	F	2033
+22857	transmembrane transporter activity	F	1408
+22891	substrate-specific transmembrane transporter activity	F	1064
+22892	substrate-specific transporter activity	F	1221
+43167	ion binding	F	1287
+97159	organic cyclic compound binding	F	1802
+1901363	heterocyclic compound binding	F	1802

@@ -1,0 +1,2 @@
+#ID	goname	hierarchy	num_prots
+9405	pathogenesis	p	712

@@ -1,0 +1,20 @@
+#GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+105	histidine biosynthetic process	P	46	10499	51301
+3333	amino acid transmembrane transport	P	45	10154	51647
+6094	gluconeogenesis	P	45	10497	51304
+6113	fermentation	P	41	10472	51333
+6221	pyrimidine nucleotide biosynthetic process	P	48	10451	51347
+6261	DNA-dependent DNA replication	P	40	10493	51313
+6298	mismatch repair	P	44	10188	51614
+6302	double-strand break repair	P	42	10190	51614
+6448	regulation of translational elongation	P	40	10496	51310
+6536	glutamate metabolic process	P	49	10508	51289
+6555	methionine metabolic process	P	46	10465	51335
+6744	ubiquinone biosynthetic process	P	40	10547	51259
+6813	potassium ion transport	P	42	10380	51424
+6855	drug transmembrane transport	P	42	10287	51517
+6857	oligopeptide transport	P	41	10369	51436
+6879	cellular iron ion homeostasis	P	40	10522	51284
+7155	cell adhesion	P	41	10529	51276
+9068	aspartate family amino acid catabolic process	P	44	10489	51313
+9085	lysine biosynthetic process	P	47	10503	51296

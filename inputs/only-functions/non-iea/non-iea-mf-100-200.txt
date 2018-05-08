@@ -1,0 +1,49 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+1130	bacterial-type RNA polymerase transcription factor activity, sequence-specific DNA binding	F	134	9802	51910
+4386	helicase activity	F	128	10211	51507
+4519	endonuclease activity	F	118	10215	51513
+4540	ribonuclease activity	F	108	10225	51513
+4672	protein kinase activity	F	108	10264	51474
+4812	aminoacyl-tRNA ligase activity	F	119	10294	51433
+4871	signal transducer activity	F	191	10318	51337
+4872	receptor activity	F	133	10376	51337
+5506	iron ion binding	F	102	10336	51408
+5524	ATP binding	F	189	10314	51343
+8173	RNA methyltransferase activity	F	156	10237	51453
+8270	zinc ion binding	F	192	10252	51402
+8649	rRNA methyltransferase activity	F	116	10212	51518
+9055	electron carrier activity	F	141	10368	51337
+15077	monovalent inorganic cation transmembrane transporter activity	F	167	10037	51642
+15078	hydrogen ion transmembrane transporter activity	F	112	10089	51645
+15171	amino acid transmembrane transporter activity	F	193	10009	51644
+15179	L-amino acid transmembrane transporter activity	F	112	10047	51687
+15197	peptide transporter activity	F	147	10220	51479
+15267	channel activity	F	104	10174	51568
+16407	acetyltransferase activity	F	125	10239	51482
+16651	oxidoreductase activity, acting on NAD(P)H	F	163	10106	51577
+16667	oxidoreductase activity, acting on a sulfur group of donors	F	104	10165	51577
+16765	transferase activity, transferring alkyl or aryl (other than methyl) groups	F	160	10243	51443
+16791	phosphatase activity	F	163	10174	51509
+16798	hydrolase activity, acting on glycosyl bonds	F	124	10226	51496
+16811	hydrolase activity, acting on carbon-nitrogen (but not peptide) bonds, in linear amides	F	129	10223	51494
+16831	carboxy-lyase activity	F	101	10317	51428
+16866	intramolecular transferase activity	F	160	10254	51432
+16875	ligase activity, forming carbon-oxygen bonds	F	120	10294	51432
+16876	ligase activity, forming aminoacyl-tRNA and related compounds	F	119	10294	51433
+16879	ligase activity, forming carbon-nitrogen bonds	F	189	10222	51435
+19842	vitamin binding	F	163	10345	51338
+22803	passive transmembrane transporter activity	F	104	10174	51568
+22853	active ion transmembrane transporter activity	F	135	10075	51636
+30170	pyridoxal phosphate binding	F	120	10382	51344
+32559	adenyl ribonucleotide binding	F	198	10307	51341
+42625	ATPase coupled ion transmembrane transporter activity	F	122	9748	51976
+44877	macromolecular complex binding	F	106	10403	51337
+46873	metal ion transmembrane transporter activity	F	157	10046	51643
+51119	sugar transmembrane transporter activity	F	127	10087	51632
+51536	iron-sulfur cluster binding	F	157	10351	51338
+51540	metal cluster binding	F	158	10351	51337
+60089	molecular transducer activity	F	136	10373	51337
+70011	peptidase activity, acting on L-amino acid peptides	F	189	10121	51536
+70279	vitamin B6 binding	F	120	10388	51338
+140102	catalytic activity, acting on a rRNA	F	116	10305	51425
+140104	molecular carrier activity	F	168	10341	51337

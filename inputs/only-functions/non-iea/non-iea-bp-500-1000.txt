@@ -1,0 +1,49 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+5975	carbohydrate metabolic process	P	714	9884	51248
+6355	regulation of transcription, DNA-templated	P	807	9757	51282
+6520	cellular amino acid metabolic process	P	910	9675	51261
+6629	lipid metabolic process	P	656	9941	51249
+6793	phosphorus metabolic process	P	946	9653	51247
+6796	phosphate-containing compound metabolic process	P	877	9714	51255
+6811	ion transport	P	708	9756	51382
+8652	cellular amino acid biosynthetic process	P	517	10055	51274
+9059	macromolecule biosynthetic process	P	887	9712	51247
+9889	regulation of biosynthetic process	P	977	9621	51248
+10468	regulation of gene expression	P	951	9647	51248
+10556	regulation of macromolecule biosynthetic process	P	946	9652	51248
+16043	cellular component organization	P	601	9999	51246
+16053	organic acid biosynthetic process	P	788	9811	51247
+16070	RNA metabolic process	P	966	9605	51275
+19219	regulation of nucleobase-containing compound metabolic process	P	889	9708	51249
+19438	aromatic compound biosynthetic process	P	988	9610	51248
+19538	protein metabolic process	P	804	9780	51262
+19637	organophosphate metabolic process	P	740	9851	51255
+31326	regulation of cellular biosynthetic process	P	959	9639	51248
+32787	monocarboxylic acid metabolic process	P	661	9937	51248
+33554	cellular response to stress	P	690	9907	51249
+34645	cellular macromolecule biosynthetic process	P	829	9770	51247
+34654	nucleobase-containing compound biosynthetic process	P	581	9991	51274
+34660	ncRNA metabolic process	P	563	10003	51280
+40007	growth	P	685	9915	51246
+42221	response to chemical	P	688	9912	51246
+43412	macromolecule modification	P	727	9872	51247
+43603	cellular amide metabolic process	P	556	10030	51260
+44248	cellular catabolic process	P	905	9677	51264
+44255	cellular lipid metabolic process	P	584	9988	51274
+44267	cellular protein metabolic process	P	622	9962	51262
+44282	small molecule catabolic process	P	592	9990	51264
+46394	carboxylic acid biosynthetic process	P	788	9810	51248
+51186	cofactor metabolic process	P	676	9923	51247
+51252	regulation of RNA metabolic process	P	846	9751	51249
+51704	multi-organism process	P	597	10003	51246
+51716	cellular response to stimulus	P	912	9688	51246
+55085	transmembrane transport	P	590	9868	51388
+55086	nucleobase-containing small molecule metabolic process	P	620	9954	51272
+71705	nitrogen compound transport	P	712	9748	51386
+71840	cellular component organization or biogenesis	P	654	9946	51246
+1901135	carbohydrate derivative metabolic process	P	903	9696	51247
+1901137	carbohydrate derivative biosynthetic process	P	524	10074	51248
+1901605	alpha-amino acid metabolic process	P	708	9868	51270
+1903506	regulation of nucleic acid-templated transcription	P	828	9768	51250
+2000112	regulation of cellular macromolecule biosynthetic process	P	919	9679	51248
+2001141	regulation of RNA biosynthetic process	P	829	9767	51250
