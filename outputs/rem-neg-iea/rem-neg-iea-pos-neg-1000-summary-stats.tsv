@@ -1,0 +1,58 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+GO:0006082	organic acid metabolic process	P	1706	8581	51559
+GO:0006139	nucleobase-containing compound metabolic process	P	2076	7335	52435
+GO:0006725	cellular aromatic compound metabolic process	P	2562	6788	52496
+GO:0006807	nitrogen compound metabolic process	P	4144	4904	52798
+GO:0006810	transport	P	1652	8552	51642
+GO:0006950	response to stress	P	1034	9429	51383
+GO:0008152	metabolic process	P	6112	2867	52867
+GO:0009056	catabolic process	P	1203	9216	51427
+GO:0009058	biosynthetic process	P	2790	6255	52801
+GO:0009987	cellular process	P	7001	2212	52633
+GO:0018130	heterocycle biosynthetic process	P	1061	8409	52376
+GO:0019222	regulation of metabolic process	P	1124	9011	51711
+GO:0019752	carboxylic acid metabolic process	P	1671	8644	51531
+GO:0031323	regulation of cellular metabolic process	P	1054	9064	51728
+GO:0034641	cellular nitrogen compound metabolic process	P	3003	6239	52604
+GO:0043170	macromolecule metabolic process	P	2597	6560	52689
+GO:0043436	oxoacid metabolic process	P	1702	8587	51557
+GO:0044237	cellular metabolic process	P	5512	3594	52740
+GO:0044238	primary metabolic process	P	4693	4256	52897
+GO:0044249	cellular biosynthetic process	P	2657	6388	52801
+GO:0044260	cellular macromolecule metabolic process	P	2331	6890	52625
+GO:0044271	cellular nitrogen compound biosynthetic process	P	1360	7855	52631
+GO:0044281	small molecule metabolic process	P	2615	7568	51663
+GO:0044283	small molecule biosynthetic process	P	1027	9282	51537
+GO:0046483	heterocycle metabolic process	P	2570	6807	52469
+GO:0050789	regulation of biological process	P	1598	8409	51839
+GO:0050794	regulation of cellular process	P	1398	8556	51892
+GO:0050896	response to stimulus	P	1704	8685	51457
+GO:0051171	regulation of nitrogen compound metabolic process	P	1021	9087	51738
+GO:0051179	localization	P	1691	8536	51619
+GO:0051234	establishment of localization	P	1668	8538	51640
+GO:0060255	regulation of macromolecule metabolic process	P	1045	9059	51742
+GO:0065007	biological regulation	P	1798	8170	51878
+GO:0071702	organic substance transport	P	1043	9301	51502
+GO:0071704	organic substance metabolic process	P	5643	3500	52703
+GO:0080090	regulation of primary metabolic process	P	1051	9068	51727
+GO:0090304	nucleic acid metabolic process	P	1429	8096	52321
+GO:1901360	organic cyclic compound metabolic process	P	2705	6640	52501
+GO:1901362	organic cyclic compound biosynthetic process	P	1136	8302	52408
+GO:1901564	organonitrogen compound metabolic process	P	2795	7172	51879
+GO:1901566	organonitrogen compound biosynthetic process	P	1610	8445	51791
+GO:1901575	organic substance catabolic process	P	1136	9267	51443
+GO:1901576	organic substance biosynthetic process	P	2720	6364	52762
+GO:0003676	nucleic acid binding	F	1104	8127	52615
+GO:0003824	catalytic activity	F	6701	3418	51727
+GO:0005215	transporter activity	F	1649	8791	51406
+GO:0005488	binding	F	3664	3863	54319
+GO:0005515	protein binding	F	1573	8866	51407
+GO:0016491	oxidoreductase activity	F	1184	9113	51549
+GO:0016740	transferase activity	F	2289	7955	51602
+GO:0016787	hydrolase activity	F	2033	8113	51700
+GO:0022857	transmembrane transporter activity	F	1408	8935	51503
+GO:0022891	substrate-specific transmembrane transporter activity	F	1064	9165	51617
+GO:0022892	substrate-specific transporter activity	F	1221	9098	51527
+GO:0043167	ion binding	F	1287	6705	53854
+GO:0097159	organic cyclic compound binding	F	1802	6036	54008
+GO:1901363	heterocyclic compound binding	F	1802	6036	54008
