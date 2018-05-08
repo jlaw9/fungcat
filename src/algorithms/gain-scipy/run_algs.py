@@ -32,7 +32,7 @@ class Alg_Runner:
             k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
             deltaUBLB_list=[None], epsUB_list=[0], taxon=None, num_pred_to_write=100, 
             only_cv=False, cross_validation_folds=None, 
-            forcealg=False, verbose=False):
+            forcenet=False, forcealg=False, verbose=False):
         """
         *eps*: Convergence cutoff for sinksource and sinksourceplus
         """
@@ -54,6 +54,7 @@ class Alg_Runner:
         self.only_cv = only_cv
         self.cross_validation_folds = cross_validation_folds
         self.num_pred_to_write = num_pred_to_write
+        self.forcenet = forcenet
         self.forcealg = forcealg
         self.verbose = verbose
 
@@ -125,21 +126,24 @@ class Alg_Runner:
         return goid_prots
 
 
-    def setup_network(self, network_file, unweighted=False):
+    def setup_network(self, network_file, unweighted=False, forced=False):
         # TODO update reading the initial network file
         #normalized_net_file = network_file.replace(".txt", "-normalized.txt")
         if self.l is None:
             sparse_net_file = network_file.replace('.txt', '-normalized.npz')
+            node2int_file = network_file.replace(".txt", "-node2int.txt")
         else:
             sparse_net_file = network_file.replace('.txt', '-normalized-l%s.npz' % (
                 str(self.l).replace('.', '_')))
-        node2int_file = network_file.replace(".txt", "-node2int.txt")
-        if os.path.isfile(sparse_net_file):
+            node2int_file = network_file.replace(".txt", "-node2int-l%s.txt" % (
+                str(self.l).replace('.', '_')))
+        if forced is False and (os.path.isfile(sparse_net_file) and os.path.isfile(node2int_file)):
             print("Reading network from %s" % (sparse_net_file))
             P = scipy.sparse.load_npz(sparse_net_file)
             print("Reading node names from %s" % (node2int_file))
             node2int = {n: int(n2) for n, n2 in utils.readColumns(node2int_file, 1, 2)}
-            int2node = {int(n): n2 for n, n2 in utils.readColumns(node2int_file, 2, 1)}
+            int2node = {n2: n for n, n2 in node2int.items()}
+            #int2node = {int(n2): n for n, n2 in utils.readColumns(node2int_file, 1, 2)}
 
         else:
             print("Reading network from %s" % (network_file))
@@ -178,6 +182,8 @@ class Alg_Runner:
             print("\twriting sparse normalized network to %s" % (sparse_net_file))
             scipy.sparse.save_npz(sparse_net_file, P)
 
+            del G
+
             #print("\twriting normalized network to %s" % (normalized_net_file))
             #with open(normalized_net_file, 'w') as out:
             #    out.write(''.join(["%s\t%s\t%s\n" % (u,v,str(data['weight'])) for u,v,data in H.edges(data=True)]))
@@ -205,7 +211,7 @@ class Alg_Runner:
                 network_file = f_settings.STRING_TAXON_UNIPROT % (self.taxon, self.taxon, f_settings.STRING_CUTOFF)
                 gain_file = f_settings.FUN_FILE % (self.taxon, self.taxon)
 
-            P, node2int, int2node = self.setup_network(network_file, unweighted=self.unweighted)
+            P, node2int, int2node = self.setup_network(network_file, unweighted=self.unweighted, forced=self.forcenet)
             self.node2int = node2int
             self.int2node = int2node
 
@@ -706,6 +712,8 @@ def parse_args(args):
                       help="Perform cross validation using the specified # of folds. Usually 5")
     parser.add_option('', '--forcealg', action="store_true", default=False,
                       help="Force re-running algorithms if the output files already exist")
+    parser.add_option('', '--forcenet', action="store_true", default=False,
+                      help="Force re-building network matrix from scratch")
     parser.add_option('', '--verbose', action="store_true", default=False,
                       help="Print additional info about running times and such")
 
@@ -774,6 +782,6 @@ if __name__ == "__main__":
          eps_list=opts.eps, epsUB_list=opts.epsUB,
          num_pred_to_write=opts.num_pred_to_write,
          only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
-         forcealg=opts.forcealg, verbose=opts.verbose)
+         forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
     alg_runner.main()
     #main()
