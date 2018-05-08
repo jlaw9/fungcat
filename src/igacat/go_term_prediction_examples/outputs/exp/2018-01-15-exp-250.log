@@ -1,0 +1,42 @@
+Setting up evidence code categories
+	Ingoring the evidence code 'ND' because it means there is no data available for this protein
+
+pos_neg_ev (used to assign positive and negative examples):
+	'EXP','IDA','IPI','IMP','IGI','IEP'
+rem_neg_ev (used to remove negative examples):
+	'ISS','ISO','ISA','ISM','IGC','IBA','IBD','IKR','IRD','RCA','TAS','NAS','IC','IEA'
+ignore_ev (ignored completely when assigning examples):
+	'ND'
+
+Reading annotations from GAF file /data/inputs/goa/taxon/19-strains-goa.gaf.
+	446 NOT annotations ignored
+	21899 "pos_neg_ev" annotations
+	331526 "rem_neg_ev" annotations
+	3370 "ignore_ev" annotations
+	4793 proteins have 1 or more BP annotations
+	3877 proteins have 1 or more MF annotations
+Reading GO OBO file from /data/inputs/goa/2017-09-26-go.obo
+	44979 nodes, 94543 edges
+	Warning: graph is not a dag
+	DAG for biological_process has 29657 nodes
+	DAG for molecular_function has 11195 nodes
+	DAG for cellular_component has 4127 nodes
+Category: P
+Building the gene-goterm graph
+	34450 nodes, 64516 edges
+	76766 nodes, 164550 edges
+Extracting GO terms with > 250 annotations
+	87 (out of 29657) GO terms have > 250 proteins annotated to them
+Getting positives and negatives for 87 GO terms
+Building a table with positive/negative/unknown assignments for each protein-goterm pair
+Writing table containing positive/negative/unknown assignments to inputs/pos-neg/exp/exp-pos-neg-bp-250.tsv
+Category: F
+Building the gene-goterm graph
+	15072 nodes, 21440 edges
+	59002 nodes, 157060 edges
+Extracting GO terms with > 250 annotations
+	25 (out of 11195) GO terms have > 250 proteins annotated to them
+Getting positives and negatives for 25 GO terms
+Building a table with positive/negative/unknown assignments for each protein-goterm pair
+Writing table containing positive/negative/unknown assignments to inputs/pos-neg/exp/exp-pos-neg-mf-250.tsv
+Writing summary table of # of positive, negative and unknown examples for each GO term to: inputs/pos-neg/exp/exp-pos-neg-250-summary-stats.tsv
