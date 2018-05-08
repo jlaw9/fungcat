@@ -5,6 +5,7 @@ print("Importing libraries")
 from optparse import OptionParser
 import os
 import sys
+sys.path.append("src")
 import gzip
 from tqdm import tqdm
 import src.utils.file_utils as utils
