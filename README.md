@@ -24,6 +24,7 @@ TODO add this to `master-scripty.py`.
 
 Example call:
 ```
+mkdir -p inputs/pos-neg/rem-neg-iea;
 python src/igacat/go_term_prediction_examples/go_term_prediction_examples.py   \
   --obo-file /data/inputs/goa/2017-09-26-go.obo   \
   --gaf-file inputs/goa/taxon/19-strains-goa.gaf   \
