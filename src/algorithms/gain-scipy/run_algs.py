@@ -2,7 +2,7 @@
 # Quick script to run/test the algorithms
 print("Importing libraries")
 
-from optparse import OptionParser
+from optparse import OptionParser,OptionGroup
 from collections import defaultdict
 import os
 import sys
@@ -30,7 +30,9 @@ class Alg_Runner:
     def __init__(self, versions, exp_name, pos_neg_files, goterms=None, 
             algorithms=["sinksource"], unweighted=False, l=None, eps_list=[0.0001], 
             k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
-            deltaUBLB_list=[None], epsUB_list=[0], taxon=None, num_pred_to_write=100, 
+            deltaUBLB_list=[None], epsUB_list=[0],
+            rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
+            taxon=None, num_pred_to_write=100, 
             only_cv=False, cross_validation_folds=None, 
             forcenet=False, forcealg=False, verbose=False):
         """
@@ -50,6 +52,10 @@ class Alg_Runner:
         self.s_list = s_list
         self.deltaUBLB_list = deltaUBLB_list
         self.epsUB_list = epsUB_list
+        self.rank_topk = rank_topk
+        self.rank_all = rank_all
+        self.rank_pos = rank_pos
+        self.compare_ranks = compare_ranks
         self.taxon = taxon
         self.only_cv = only_cv
         self.cross_validation_folds = cross_validation_folds
@@ -281,17 +287,17 @@ class Alg_Runner:
 
             version_params_results[version] = params_results
 
-        if self.verbose:
-            for version in self.versions:
+        for version in self.versions:
+            table = params_results_to_table(version_params_results[version])
+            if self.verbose:
                 print(version)
-                table = params_results_to_table(version_params_results[version])
                 print(table)
-                out_dir = "outputs/viz/params-results/%s" % (self.exp_name)
-                utils.checkDir(out_dir)
-                out_file = "%s/%s-params-results.tsv" % (out_dir, version)
-                print("writing %s" % (out_file))
-                with open(out_file, 'w') as out:
-                    out.write(table)
+            out_dir = "outputs/viz/params-results"
+            utils.checkDir(out_dir)
+            out_file = "%s/%s-%s-params-results.tsv" % (out_dir, self.exp_name, version)
+            print("Writing params-results to: %s" % (out_file))
+            with open(out_file, 'w') as out:
+                out.write(table)
 
         return
 
@@ -377,7 +383,7 @@ class Alg_Runner:
                 all_params_results.update(params_results)
 
             if self.verbose:
-                print(params_results_to_table(params_results))
+                print(params_results_to_table(all_params_results))
 
         return all_params_results
 
@@ -388,8 +394,8 @@ class Alg_Runner:
         *returns*: a dictionary of scores from the algorithm for each goterm
             and a dictionary of summary statistics about the run
         """
-        params_results = {}
         # scores from the algorithm for each goterm
+        params_results = {} 
         goid_scores = {}
         try:
             if out_file is not None:
@@ -406,41 +412,32 @@ class Alg_Runner:
             print("Running %s for %d goterms. Writing to %s" % (alg, len(goid_pos_neg), out_file))
             for goterm in tqdm(goid_pos_neg):
                 positives, negatives = goid_pos_neg[goterm]['pos'], goid_pos_neg[goterm]['neg']
-                num_unk = P.shape[0] - len(positives)
-                if alg in ['sinksource', 'sinksource-squeeze', 'sinksource-ripple']:
-                    num_unk -= len(negatives) 
-                len_N = P.shape[0]
 
-                # TODO streamline calling the correct function. They all take the same parameters
-                # This uses the same UB as Ripple
-                if alg == "sinksourceplus":
-                    scores, time, iters, comp = sinksource.runSinkSource(
-                            P, positives, negatives=None, max_iters=1000, delta=eps, a=a)
-                elif alg == "sinksource":
-                    scores, time, iters, comp = sinksource.runSinkSource(
-                            P, positives, negatives=negatives, max_iters=1000, delta=eps, a=a)
-                elif alg == "sinksourceplus-squeeze":
-                    R, scores, time, iters, comp, max_ds = sinksource_squeeze.runSinkSourceSqueeze(
-                            P, positives, k=k, a=a, epsUB=epsUB, verbose=self.verbose)
-                elif alg == "sinksource-squeeze":
-                    R, scores, time, iters, comp, max_ds = sinksource_squeeze.runSinkSourceSqueeze(
-                            P, positives, negatives=negatives, k=k, a=a, epsUB=epsUB, verbose=self.verbose)
-                elif alg == "sinksourceplus-ripple":
-                    R, scores, time, iters, comp, len_N, max_ds = sinksource_ripple.runSinkSourceRipple(
-                            P, positives, k=k, t=t, s=s, a=a, epsUB=epsUB)
-                # This uses the same UB as Ripple, but with negatives
-                elif alg == "sinksource-ripple":
-                    R, scores, time, iters, comp, len_N, max_ds = sinksource_ripple.runSinkSourceRipple(
-                            P, positives, negatives, k=k, t=t, s=s, a=a, epsUB=epsUB)
-
-                tqdm.write("\t%s converged after %d iterations " % (alg, iters) + \
-                        "(%0.2f sec) for goterm %s" % (time, goterm))
-
+                scores, curr_params_results, _ = self.run_alg(P, alg, positives, negatives, 
+                        a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goterm=goterm)
                 goid_scores[goterm] = scores
+                params_results.update(curr_params_results)
 
-                # also keep track of the time it takes for each of the parameter sets
-                params_key = (alg, goterm, len(positives), num_unk, a, eps, k, t, s, epsUB)
-                params_results[params_key] = (time, iters, comp, len_N)
+                if self.compare_ranks and 'squeeze' in alg:
+                    # compare how long it takes for the ranks to match the previous run
+                    print("Repeating the run, but comparing the ranks from the previous run at each iteration")
+                    ranks = [n for n in sorted(scores, key=scores.get, reverse=True)]
+                    ranks = ranks[:k] if self.rank_topk is True else ranks
+                    _, _, ss_squeeze = self.run_alg(P, alg, positives, negatives,
+                            a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goterm=goterm, ranks_to_compare=ranks)
+                    # TODO move this somewhere else
+                    # write the ranks to a file
+                    out_dir = "outputs/viz/ranks"
+                    utils.checkDir(out_dir)
+                    k_str = str(k) if self.rank_topk is True else 'all'
+                    rank_file = "%s/compare-ranks-%s-k%s.txt" % (out_dir, goterm, k_str)
+                    print("writing %s" % (rank_file))
+                    with open(rank_file, 'w') as out:
+                        out.write("#kendalltau\tspearmanr\tnum_unranked\tmax_d\n")
+                        out.write(''.join("%0.6f\t%0.6f\t%d\t%s\n" % (
+                            ss_squeeze.kendalltau_list[i], ss_squeeze.spearmanr_list[i],
+                            ss_squeeze.num_unranked_list[i], ss_squeeze.max_d_list[i])
+                                          for i in range(ss_squeeze.num_iters)))
 
                 if out_file is not None:
                     # convert the nodes back to their names, and make a dictionary out of the scores
@@ -461,6 +458,54 @@ class Alg_Runner:
             print("Finished running %s for %d goterms. Wrote to %s" % (alg, len(goid_pos_neg), out_file))
 
         return goid_scores, params_results
+
+
+    def run_alg(self, P, alg, positives, negatives, nodes_to_rank=None,
+                a=0.8, eps='-', k='-', t='-', s='-', epsUB=0, goterm='-', ranks_to_compare=None):
+        """ Run the specified algorithm with the given parameters for each goterm 
+        *returns*: a dictionary of scores from the algorithm for each goterm
+            and a dictionary of summary statistics about the run
+        """
+        num_unk = P.shape[0] - len(positives)
+        if alg in ['sinksource', 'sinksource-squeeze', 'sinksource-ripple']:
+            num_unk -= len(negatives) 
+        if alg in ['sinksourceplus', 'sinksourceplus-squeeze', 'sinksourceplus-ripple']:
+            negatives=None
+        len_N = P.shape[0]
+        ss_obj = None 
+
+        # TODO streamline calling the correct function. They all take the same parameters
+        # This uses the same UB as Ripple
+        if alg in ["sinksourceplus", 'sinksource']:
+            scores, time, iters, comp = sinksource.runSinkSource(
+                    P, positives, negatives=negatives, max_iters=1000, delta=eps, a=a)
+            update_time = '-'
+        elif alg in ['sinksourceplus-squeeze', 'sinksource-squeeze']:
+            ss_obj = sinksource_squeeze.SinkSourceSqueeze(
+                    P, positives, negatives=negatives, k=k, a=a, epsUB=epsUB, verbose=self.verbose,
+                    rank_topk=self.rank_topk, rank_all=self.rank_all, rank_nodes=nodes_to_rank,
+                    ranks_to_compare=ranks_to_compare)
+            R, scores = ss_obj.runSinkSourceSqueeze() 
+            total_time, update_time, iters, comp, len_N = ss_obj.get_stats()
+            num_unk = len_N
+        elif alg in ['sinksourceplus-ripple', 'sinksource-ripple']:
+            ss_obj = sinksource_ripple.SinkSourceRipple(
+                    P, positives, negatives=negatives, k=k, a=a, t=t, s=s, epsUB=epsUB,
+                    verbose=self.verbose)
+            R, scores = ss_obj.runSinkSourceRipple() 
+            total_time, update_time, iters, comp, len_N = ss_obj.get_stats()
+            num_unk = ss_obj.P.shape[0]
+
+        tqdm.write("\t%s converged after %d iterations " % (alg, iters) +
+                "(%0.2f sec) for goterm %s" % (total_time, goterm))
+
+        # also keep track of the time it takes for each of the parameter sets
+        params_results = {} 
+        params_key = (alg, goterm, len(positives), num_unk, a, eps, k, t, s, epsUB)
+        params_results[params_key] = (total_time, update_time, iters, comp, len_N)
+
+        # TODO return a reference to the object used to run the algorithm to get additional statistics where necessary
+        return scores, params_results, ss_obj
 
 
     def plot_max_ds(self, max_d_list):
@@ -510,16 +555,16 @@ class Alg_Runner:
 
     def run_cross_validation(self, P, alg, goid_pos_neg, folds=5, out_pref=None):
         from sklearn.model_selection import KFold
-        from sklearn import metrics
+        #from sklearn import metrics
 
         # compare how long it takes to run each from scratch vs using the previous run's scores
         params_results = {}
-        overall_time_normal = 0
-        overall_time_using_predictions = 0
+        #overall_time_normal = 0
+        #overall_time_using_predictions = 0
 
-        if alg not in ['sinksource', "sinksourceplus"]:
-            print("%s not yet implemented for CV" % (alg))
-            return params_results
+        #if alg not in ['sinksource', "sinksourceplus", "sinksource-squeeze", "sinksourceplus-squeeze"]:
+        #    print("%s not yet implemented for CV" % (alg))
+        #    return params_results
     #    if alg == "sinksourceplus":
     #        # this should already have been created from the regular run
     #        out_file = "%sa%s-eps%s.txt" % (out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
@@ -550,29 +595,34 @@ class Alg_Runner:
             # store all of the prediction scores from each fold in a list
             combined_fold_scores = {}
             unknowns = set(range(P.shape[0])) - set(positives) 
-            if alg in ['sinksource']:
+            if 'plus' not in alg:
                 unknowns = unknowns - set(negatives)
 
             for (pos_train_idx, pos_test_idx), (neg_train_idx, neg_test_idx) in zip(kf.split(positives), kf_neg.split(negatives)):
                 fold += 1
                 pos_train, pos_test = positives[pos_train_idx], positives[pos_test_idx]
                 neg_train, neg_test = negatives[neg_train_idx], negatives[neg_test_idx]
-                #print(pos_train)
-                #print("Current fold: %d train positives, %d test" % (len(pos_train), len(pos_test)))
-                if alg == "sinksource":
-                    # TODO streamline multiple parameters
-                    scores, time, iters, comp = sinksource.runSinkSource(
-                            P, pos_train, negatives=neg_train, max_iters=1000, delta=self.eps_list[0], a=self.a_list[0])
-                if alg == "sinksourceplus":
-                    # TODO streamline multiple parameters
-                    scores, time, iters, comp = sinksource.runSinkSource(
-                            P, pos_train, negatives=None, max_iters=1000, delta=self.eps_list[0], a=self.a_list[0])
+
+                #if self.rank_pos is True and ('squeeze' in alg or 'ripple' in alg):
+                nodes_to_rank = None 
+                if self.rank_pos is True:
+                    nodes_to_rank = set(list(pos_test))
+
+                # TODO use the list of parameters rather than the first one. 
+                scores, params_results = self.run_alg(P, alg, pos_train, neg_train,
+                        out_file=None, nodes_to_rank=nodes_to_rank, goterm=goterm,
+                        a=self.a_list[0], eps=self.eps_list[0], k=self.k_list[0],
+                        t=self.t_list[0], s=self.s_list[0], epsUB=self.epsUB_list[0])
                     # scores is a dictionary of node integers 
                     # containing only scores for the non-positive and non-negative nodes
                     #scores = np.array([scores[n] for n in pos_test])
                     #test_scores[test_idx] = scores 
                 # the test positives and negatives will appear in a single fold
                 fold_scores = {n:scores[n] for n in set(pos_test).union(set(neg_test))}
+                if nodes_to_rank is not None:
+                    fold_pos_ranks = [i for i, x in enumerate(sorted(scores, key=scores.get)) if x in nodes_to_rank]
+                    print("Ranks of left out positives:")
+                    print(fold_pos_ranks)
                 # the unknowns will be in each fold, so append the fold number to those nodes
                 #for n in unknowns:
                 #    fold_scores["%d-%d" % (n, fold)] = scores[n]
@@ -651,13 +701,13 @@ class Alg_Runner:
 def params_results_to_table(params_results):
     # print out a table of the results for each parameter set
     # print out the table after each iteration so the results are still viewable if the script quits earl or something
-    results = "\t".join(['alg', 'goterm', '# pos', '# unk', 'a', 'k', 't', 's', 'eps', 'epsUB', 'time', 'iters', '# comp', 'len_N']) + '\n'
+    results = "\t".join(['alg', 'goterm', '# pos', '# unk', 'a', 'k', 't', 's', 'eps', 'epsUB', 'time', 'update-time', 'iters', '# comp', 'len_N']) + '\n'
     for params_key in sorted(params_results):
         alg, goterm, num_pos, num_unk, a, eps, k, t, s, epsUB = params_key
-        time, iters, total_comp, len_N = params_results[params_key]
-        results += "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%0.2f\t%d\t%0.2e\t%s\n" % \
+        time, update_time, iters, total_comp, len_N = params_results[params_key]
+        results += "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%0.3f\t%0.3f\t%d\t%0.2e\t%s\n" % \
                 (alg, goterm, num_pos, num_unk, str(a), str(k), str(t), str(s), str(eps), str(epsUB), 
-                        time, iters, total_comp, str(len_N))
+                        time, update_time, iters, total_comp, str(len_N))
     return results
 
 
@@ -676,18 +726,25 @@ def parse_args(args):
     ## Parse command line args.
     usage = '%s [options]\n' % (sys.argv[0])
     parser = OptionParser(usage=usage)
-    parser.add_option('','--version',type='string', action='append',
+
+    # general parameters
+    group = OptionGroup(parser, 'Main Options')
+    group.add_option('','--version',type='string', action='append',
                       help="Version of the PPI to run. Can specify multiple versions and they will run one after the other. Options are: %s." % (', '.join(f_settings.ALLOWEDVERSIONS)))
-    parser.add_option('-A', '--algorithm', action="append",
+    group.add_option('-A', '--algorithm', action="append",
                       help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(ALGORITHMS)))
-    parser.add_option('', '--exp-name', type='string',
+    group.add_option('', '--exp-name', type='string',
                       help="Experiment name to use when running GAIN.")
-    parser.add_option('', '--pos-neg-file', type='string', action='append',
+    group.add_option('', '--pos-neg-file', type='string', action='append',
                       help="File containing positive and negative examples for each GO term")
-    parser.add_option('', '--only-functions', type='string',
+    group.add_option('', '--only-functions', type='string',
                       help="Run GAIN using only the functions in a specified file (should be in XX format i.e., without the leading GO:00).")
-    parser.add_option('-G', '--goterm', type='string', action="append",
+    group.add_option('-G', '--goterm', type='string', action="append",
                       help="Specify the GO terms to use (should be in GO:00XX format)")
+    parser.add_option_group(group)
+
+    # parameters for running algorithms
+    group = OptionGroup(parser, 'Algorithm options')
     parser.add_option('', '--unweighted', action="store_true", default=False,
                       help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
     parser.add_option('-l', '--sinksourceplus-lambda', type=float, 
@@ -704,6 +761,19 @@ def parse_args(args):
                       help="Stopping criteria for SinkSource")
     parser.add_option('-e', '--epsUB', type=float, action="append",
                       help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
+    parser.add_option('', '--rank-topk', action="store_true", default=False,
+                      help="Continue iterating until the top-k nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    parser.add_option('', '--rank-all', action="store_true", default=False,
+                      help="Continue iterating until all nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    parser.add_option('', '--rank-pos', action="store_true", default=False,
+                      help="During cross-validation, continue iterating until the nodes of the left out positives are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    parser.add_option('', '--compare-ranks', action="store_true", default=False,
+                      help="Compare how long it takes (# iters) for the ranks to match the final fixed ranks." +
+                      "Currently only implemented with ss_squeeze and --rank-topk, --rank-all")
+    parser.add_option_group(group)
+
+    # additional parameters
+    group = OptionGroup(parser, 'Additional options')
     parser.add_option('-W', '--num-pred-to-write', type='int', default=100,
                       help="Number of predictions to write to the file. If 0, none will be written. If -1, all will be written. Default=100")
     parser.add_option('', '--only-cv', action="store_true", default=False,
@@ -716,9 +786,7 @@ def parse_args(args):
                       help="Force re-building network matrix from scratch")
     parser.add_option('', '--verbose', action="store_true", default=False,
                       help="Print additional info about running times and such")
-
-    #parser.add_option('', '--goid', type='string', metavar='STR',
-    #                  help='GO-term ID for which annotations and precitions will be posted')
+    parser.add_option_group(group)
 
     (opts, args) = parser.parse_args(args)
 
@@ -775,13 +843,15 @@ if __name__ == "__main__":
         goterms = set() if goterms is None else goterms
         goterms.update(set(opts.goterm))
 
-    alg_runner = Alg_Runner(opts.version, opts.exp_name,
-         opts.pos_neg_file, goterms, opts.algorithm,
-         unweighted=opts.unweighted, l=opts.sinksourceplus_lambda,
-         k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=opts.alpha,
-         eps_list=opts.eps, epsUB_list=opts.epsUB,
-         num_pred_to_write=opts.num_pred_to_write,
-         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
-         forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
+    alg_runner = Alg_Runner(
+        opts.version, opts.exp_name,
+        opts.pos_neg_file, goterms, opts.algorithm,
+        unweighted=opts.unweighted, l=opts.sinksourceplus_lambda,
+        k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=opts.alpha,
+        eps_list=opts.eps, epsUB_list=opts.epsUB,
+        rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos=opts.rank_pos, compare_ranks=opts.compare_ranks,
+        num_pred_to_write=opts.num_pred_to_write,
+        only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
+        forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
     alg_runner.main()
     #main()
