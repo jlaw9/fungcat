@@ -45,11 +45,11 @@ taxon = "208964"
 prots_file = "%s/%s-%s-prots.txt" % (out_dir, version, taxon)
 out_file = "%s/%s-%s-adj-net.txt" % (out_dir, version, taxon)
 if os.path.isfile(prots_file) and os.path.isfile(out_file):
-    print("Skipping mapping nodes to ids. %s exists" % (out_file,))
+    print("Skipping mapping nodes to ids. %s exists" % (out_file))
     #prots = utils.readItemList(prots_file)
 else:
     # G = readtable(filename)
-    network_file = "inputs/2017_10-seq-sim-x5-string/2017_10-seq-sim-x5-string-net.txt"
+    network_file = "inputs/%s/%s-net.txt" % (version, version)
     if taxon is not None:
         network_file = f_settings.STRING_TAXON_UNIPROT % (taxon, taxon, f_settings.STRING_CUTOFF)
     print("Reading network from %s" % (network_file))
