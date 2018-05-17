@@ -21,15 +21,15 @@ os.chdir("/data/jeff-law/projects/fungcat-function-prediction")
 usage = '%s [options]\n' % (sys.argv[0])
 parser = OptionParser(usage=usage)
 parser.add_option('-i', '--string-file', type='string', default=f_settings.STRING_FILE,
-                    help="File containing interactions of all species downloaded from STRING. Will be split into each individual species")
+        help="File containing interactions of all species downloaded from STRING. Will be split into each individual species. Default: %s." % (f_settings.STRING_FILE))
 parser.add_option('-o', '--out-dir', type='string', default=f_settings.STRING_TAXON_DIR,
-                    help="Directory to write the interactions of each species to.")
+        help="Directory to write the interactions of each species to. Default: %s." % (f_settings.STRING_TAXON_DIR))
 parser.add_option('-S', '--score-cutoff', type='int', default=f_settings.STRING_CUTOFF,
                     help="Cutoff for the STRING interaction score. Default is 400 (medium). Useful to save on file space")
 parser.add_option('-s', '--selected-species', type='string', default=f_settings.SELECTED_STRAINS,
-                    help="Uniprot reference proteome species to perform analyses on")
+        help="Uniprot reference proteome species to perform analyses on. Default: %s"% (f_settings.STRING_TO_UNIPROT))
 parser.add_option('-u', '--map-to-uniprot', type='string', default=f_settings.STRING_TO_UNIPROT,
-                    help="Also write the file formatted to use as input for GAIN")
+        help="Also write the file formatted to use as input for GAIN. Default: %s" % (f_settings.STRING_TO_UNIPROT))
 
 (opts, args) = parser.parse_args()
 
