@@ -32,6 +32,7 @@ def convert_nodes_to_int(G):
     return G, node2int, int2node
 
 
+# TODO add command-line parameters to make this script more versitile
 out_dir = "test/deepnf"
 utils.checkDir(out_dir)
 
@@ -46,7 +47,9 @@ prots_file = "%s/%s-%s-prots.txt" % (out_dir, version, taxon)
 out_file = "%s/%s-%s-adj-net.txt" % (out_dir, version, taxon)
 if os.path.isfile(prots_file) and os.path.isfile(out_file):
     print("Skipping mapping nodes to ids. %s exists" % (out_file))
-    #prots = utils.readItemList(prots_file)
+    print("Reading the prot ordering/node2int mapping from %s" % (prots_file))
+    prots = utils.readItemList(prots_file, 1)
+    node2int = utils.readDict(prots_file, 1, 2)
 else:
     # G = readtable(filename)
     network_file = "inputs/%s/%s-net.txt" % (version, version)
@@ -77,9 +80,11 @@ else:
     print("\twriting node2int labels to %s" % (prots_file))
     with open(prots_file, 'w') as out:
         out.write(''.join(["%s\t%s\n" % (int2node[n], n) for n in sorted(int2node)]))
+    # keep track of the ordering for later
+    prots = [int2node[n] for n in sorted(int2node)]
 
-print("Setting up the annotation matrix not yet implemented. Quitting.")
-sys.exit()
+#print("Setting up the annotation matrix not yet implemented. Quitting.")
+#sys.exit()
 
 # now read the annotations and map those to IDs
 #ann_file = "%s/%s-%s-%s-goa.txt" % (out_Dir, version, taxon)
@@ -88,7 +93,6 @@ sys.exit()
 #else:
 #print("Mapping go annotations to node IDs to %s" % (ann_file))
 #positives = np.asarray([node2int[n] for n in all_goid_prots[goterm] if n in node2int])
-
 
 
 # this file just has the direct GO annotations (not propagated)
@@ -159,5 +163,5 @@ for h in ["P"]:
     #dag_matrix = nx.to_scipy_sparse_matrix(G, nodelist=goids, weight=None)
     out_file = "%s/%s-annotations.mat" % (out_dir, h)
     print("writing %s" % (out_file))
-    savemat(out_file, annotation_matrix)
+    savemat(out_file, {'annotations': annotation_matrix})
     #savemat(out_file, {'R':annotation_matrix, 'H': dag_matrix})
