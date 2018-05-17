@@ -1,0 +1,113 @@
+GO term	GO term name	GO category	# positive examples	# negative examples	# unknown examples
+GO:0005975	carbohydrate metabolic process	P	312	4339	57195
+GO:0006082	organic acid metabolic process	P	600	3927	57319
+GO:0006139	nucleobase-containing compound metabolic process	P	584	3494	57768
+GO:0006355	regulation of transcription, DNA-templated	P	372	4180	57294
+GO:0006520	cellular amino acid metabolic process	P	273	4372	57201
+GO:0006629	lipid metabolic process	P	293	4382	57171
+GO:0006725	cellular aromatic compound metabolic process	P	757	3263	57826
+GO:0006793	phosphorus metabolic process	P	345	4166	57335
+GO:0006796	phosphate-containing compound metabolic process	P	313	4204	57329
+GO:0006807	nitrogen compound metabolic process	P	1345	2434	58067
+GO:0006810	transport	P	548	3960	57338
+GO:0006811	ion transport	P	251	4392	57203
+GO:0006950	response to stress	P	701	4023	57122
+GO:0006974	cellular response to DNA damage stimulus	P	298	4452	57096
+GO:0008152	metabolic process	P	2163	1448	58235
+GO:0009056	catabolic process	P	523	4141	57182
+GO:0009058	biosynthetic process	P	986	2944	57916
+GO:0009059	macromolecule biosynthetic process	P	297	3801	57748
+GO:0009605	response to external stimulus	P	299	4450	57097
+GO:0009628	response to abiotic stimulus	P	310	4472	57064
+GO:0009889	regulation of biosynthetic process	P	472	4083	57291
+GO:0009892	negative regulation of metabolic process	P	262	4497	57087
+GO:0009987	cellular process	P	2875	1016	57955
+GO:0010035	response to inorganic substance	P	284	4497	57065
+GO:0010468	regulation of gene expression	P	460	4094	57292
+GO:0010556	regulation of macromolecule biosynthetic process	P	439	4100	57307
+GO:0016043	cellular component organization	P	312	4313	57221
+GO:0016053	organic acid biosynthetic process	P	265	4376	57205
+GO:0018130	heterocycle biosynthetic process	P	345	3862	57639
+GO:0019219	regulation of nucleobase-containing compound metabolic process	P	415	4133	57298
+GO:0019222	regulation of metabolic process	P	595	3988	57263
+GO:0019438	aromatic compound biosynthetic process	P	315	3882	57649
+GO:0019538	protein metabolic process	P	254	4221	57371
+GO:0019752	carboxylic acid metabolic process	P	573	3972	57301
+GO:0031323	regulation of cellular metabolic process	P	533	4026	57287
+GO:0031326	regulation of cellular biosynthetic process	P	453	4092	57301
+GO:0033554	cellular response to stress	P	436	4309	57101
+GO:0034641	cellular nitrogen compound metabolic process	P	866	3065	57915
+GO:0034645	cellular macromolecule biosynthetic process	P	282	3806	57758
+GO:0040007	growth	P	672	4114	57060
+GO:0042221	response to chemical	P	519	4192	57135
+GO:0043170	macromolecule metabolic process	P	852	3055	57939
+GO:0043436	oxoacid metabolic process	P	596	3931	57319
+GO:0044237	cellular metabolic process	P	1947	1788	58111
+GO:0044238	primary metabolic process	P	1570	2139	58137
+GO:0044248	cellular catabolic process	P	412	4289	57145
+GO:0044249	cellular biosynthetic process	P	921	2995	57930
+GO:0044255	cellular lipid metabolic process	P	265	4417	57164
+GO:0044260	cellular macromolecule metabolic process	P	754	3212	57880
+GO:0044271	cellular nitrogen compound biosynthetic process	P	382	3689	57775
+GO:0044281	small molecule metabolic process	P	902	3537	57407
+GO:0044282	small molecule catabolic process	P	253	4469	57124
+GO:0044283	small molecule biosynthetic process	P	340	4273	57233
+GO:0044419	interspecies interaction between organisms	P	303	4397	57146
+GO:0046394	carboxylic acid biosynthetic process	P	265	4375	57206
+GO:0046483	heterocycle metabolic process	P	760	3281	57805
+GO:0048518	positive regulation of biological process	P	320	4450	57076
+GO:0048519	negative regulation of biological process	P	371	4387	57088
+GO:0048523	negative regulation of cellular process	P	288	4468	57090
+GO:0050789	regulation of biological process	P	899	3640	57307
+GO:0050794	regulation of cellular process	P	728	3753	57365
+GO:0050896	response to stimulus	P	1270	3395	57181
+GO:0051171	regulation of nitrogen compound metabolic process	P	498	4049	57299
+GO:0051179	localization	P	571	3949	57326
+GO:0051234	establishment of localization	P	559	3951	57336
+GO:0051252	regulation of RNA metabolic process	P	387	4163	57296
+GO:0051704	multi-organism process	P	505	4182	57159
+GO:0051716	cellular response to stimulus	P	649	4099	57098
+GO:0060255	regulation of macromolecule metabolic process	P	519	4030	57297
+GO:0065007	biological regulation	P	996	3503	57347
+GO:0070887	cellular response to chemical stimulus	P	262	4524	57060
+GO:0071702	organic substance transport	P	401	4276	57169
+GO:0071704	organic substance metabolic process	P	2004	1754	58088
+GO:0071705	nitrogen compound transport	P	269	4422	57155
+GO:0071840	cellular component organization or biogenesis	P	340	4285	57221
+GO:0080090	regulation of primary metabolic process	P	530	4031	57285
+GO:0090304	nucleic acid metabolic process	P	388	3791	57667
+GO:1901135	carbohydrate derivative metabolic process	P	322	4278	57246
+GO:1901360	organic cyclic compound metabolic process	P	820	3200	57826
+GO:1901362	organic cyclic compound biosynthetic process	P	365	3822	57659
+GO:1901564	organonitrogen compound metabolic process	P	931	3372	57543
+GO:1901566	organonitrogen compound biosynthetic process	P	435	4009	57402
+GO:1901575	organic substance catabolic process	P	503	4168	57175
+GO:1901576	organic substance biosynthetic process	P	955	2996	57895
+GO:1903506	regulation of nucleic acid-templated transcription	P	372	4174	57300
+GO:2000112	regulation of cellular macromolecule biosynthetic process	P	433	4114	57299
+GO:2001141	regulation of RNA biosynthetic process	P	373	4174	57299
+GO:0000166	nucleotide binding	F	294	3001	58551
+GO:0003676	nucleic acid binding	F	460	3085	58301
+GO:0003677	DNA binding	F	390	3272	58184
+GO:0003824	catalytic activity	F	2318	1272	58256
+GO:0005215	transporter activity	F	392	3424	58030
+GO:0005488	binding	F	2379	896	58571
+GO:0005515	protein binding	F	1495	2344	58007
+GO:0016491	oxidoreductase activity	F	465	3333	58048
+GO:0016740	transferase activity	F	758	3013	58075
+GO:0016772	transferase activity, transferring phosphorus-containing groups	F	302	3501	58043
+GO:0016787	hydrolase activity	F	741	2971	58134
+GO:0016788	hydrolase activity, acting on ester bonds	F	277	3539	58030
+GO:0022857	transmembrane transporter activity	F	349	3480	58017
+GO:0022891	substrate-specific transmembrane transporter activity	F	276	3551	58019
+GO:0022892	substrate-specific transporter activity	F	306	3510	58030
+GO:0036094	small molecule binding	F	426	2830	58590
+GO:0042802	identical protein binding	F	382	2425	59039
+GO:0043167	ion binding	F	804	2186	58856
+GO:0043168	anion binding	F	409	2930	58507
+GO:0043169	cation binding	F	480	2866	58500
+GO:0046872	metal ion binding	F	457	2889	58500
+GO:0046914	transition metal ion binding	F	268	3481	58097
+GO:0097159	organic cyclic compound binding	F	850	2193	58803
+GO:1901265	nucleoside phosphate binding	F	294	3001	58551
+GO:1901363	heterocyclic compound binding	F	850	2193	58803

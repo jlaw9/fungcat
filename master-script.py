@@ -5,6 +5,7 @@ print("Importing libraries")
 from optparse import OptionParser
 import os
 import sys
+sys.path.append("src")
 import gzip
 from tqdm import tqdm
 import src.utils.file_utils as utils
@@ -38,6 +39,10 @@ def main():
 
         # setup all of the GO annotations
         setup_inputs(selected_strains, forced=opts.forced)
+
+        if opts.exp_name is None:
+            print("Finished setting up inputs\nSpecify --exp-name to run GAIN")
+            sys.exit()
 
         algorithms = opts.algorithm
         if opts.algorithm is None:
@@ -157,7 +162,7 @@ def setup_network(selected_strains, forced=False):
                 append_network_to_file(f_settings.SEQ_SIM_NETWORKS[VERSION], NETWORK, selected_strains=selected_strains)
             else:
                 print("Adding a symbolic link from %s to %s" % (f_settings.SEQ_SIM_NETWORKS[VERSION],NETWORK))
-                os.symlink(f_settings.SEQ_SIM_NETWORKS[VERSION],NETWORK)
+                os.symlink("../../%s" % (f_settings.SEQ_SIM_NETWORKS[VERSION]),NETWORK)
 
 
 def append_network_to_file(network_file, out_network_file, selected_strains=None, mod_weight=None):
@@ -461,8 +466,8 @@ def parse_args():
                       help='Send an email (to specified recipient, from jeffreynlaw@gmail.com) after the script has finished')
     (opts, args) = parser.parse_args()
 
-    if opts.exp_name is None or opts.version is None:
-        print("--version and --exp-name required")
+    if opts.version is None:
+        print("--version required")
         sys.exit(1)
 
     for version in opts.version:
