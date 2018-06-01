@@ -9,8 +9,10 @@ import gzip
 #import subprocess
 #import networkx as nx
 from tqdm import tqdm
-import utilsPoirel as utils
+sys.path.append('src')
 import fungcat_settings as f_settings
+sys.path.append('src/utils')
+import utils.file_utils as utils
 
 
 #OUT_FILE_TEMPLATE = f_settings.STRING_TAXON_UNIPROT
