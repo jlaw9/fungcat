@@ -37,6 +37,10 @@ def read_params(fname):
         key, val = line.strip().split('=')
         key = str(key)
         val = str(val)
+        # if key == 'toxon_id':
+        #     params[key] = list(map(int, val.strip('[]').split(',')))
+        # else:
+        # params[key] = val
         params[key] = val
 
     print("###############################################################")
@@ -60,7 +64,6 @@ def convert_nodes_to_int(G):
 
 params = read_params(sys.argv[1])
 # TODO add command-line parameters to make this script more versitile
-cutoff = False
 if 'out_dir' not in params:
     print("Missing parameter out_dir")
     exit(1)
@@ -72,10 +75,8 @@ elif 'toxon_id' not in params:
     exit(1)
 elif 'lo_cutoff' not in params:
     print("Parameter lo_cutoff was not set")
-    cutoff = True
 elif 'hi_cutoff' not in params:
     print("Parameter hi_cutoff was not set")
-    cutoff = True
 
 out_dir = params['out_dir']
 utils.checkDir(out_dir)
@@ -177,7 +178,7 @@ for h in ["P"]:
 
     # write this order of the GO IDs to a file so they can easily be accessed (to get the rows of the sparse matrix)
     # without having to perform these operations again
-    out_file = "%s/%s-goids.txt" % (out_dir, h)
+    out_file = "%s/%s-goids.txt" % (out_dir, taxon)
     print("Writing %s" % (out_file))
     with open(out_file, 'w') as out:
         out.write('\n'.join(goids)+'\n')
@@ -211,8 +212,9 @@ for h in ["P"]:
         #row = [prot]
         row = []
         curr_goids = prot_goids.pop(prot, set())
+        index_prot = prots.index(prot)
         for goid in curr_goids:
-            prot_array.append(prots.index(prot))
+            prot_array.append(index_prot)
             go_array.append(goids.index(goid))
             val_array.append(1)
     row_num = goids.__len__()
