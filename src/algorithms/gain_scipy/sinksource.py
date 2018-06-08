@@ -1,12 +1,13 @@
 
 # Python implementation of SinkSource
 import time
-from tqdm import trange, tqdm
-import networkx as nx
+#from tqdm import trange, tqdm
+#import networkx as nx
 import alg_utils
 import numpy as np
-import gc
-from scipy.sparse import csr_matrix
+#mport gc
+from scipy.sparse import csr_matrix, eye
+from scipy.sparse.linalg import spsolve
 #import pdb
 
 
@@ -25,11 +26,11 @@ def SinkSource_scipy(P, f, max_iters=1000, delta=0.0001, a=0.8, scores={}, verbo
 
     start_time = time.time()
     #for iters in trange(max_iters):
-    for iters in range(max_iters):
+    for iters in range(1,max_iters+1):
         # this uses way too much ram
         #s = a*np.dot(A,prev_s) + f
         s = a*csr_matrix.dot(P, prev_s) + f
-        
+
         # TODO store this in a list and return it
         max_d = (s - prev_s).max()
         if verbose:
@@ -57,16 +58,42 @@ def runSinkSource(P, positives, negatives=None, max_iters=1000, delta=0.0001, a=
     *G*: Should already be normalized
     *positives*: set of positive nodes
     *negeatives*: set of negative nodes
+    *max_iters*: max # of iterations to run SinkSource. 
+        If 0, use spsolve to solve the equation directly 
     *k*: Run with upper and lower bounds to prune unnecessary nodes
     """
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
     #G = alg_utils.normalizeGraphEdgeWeights(G)
-    P, f, int2int = alg_utils.setupScores(P, positives, negatives, a=a)
+    P, f, node2idx, idx2node = alg_utils.setupScores(P, positives, negatives, a=a, remove_nonreachable=False)
 
-    s, time, iters, comp = SinkSource_scipy(P, f, max_iters=max_iters, delta=delta, a=a, scores=scores)
+    if max_iters > 0:
+        s, total_time, iters, comp = SinkSource_scipy(P, f, max_iters=max_iters, delta=delta, a=a, scores=scores)
+    else:
+        start_time = time.time()
+        # try solving for s directly
+        A = eye(P.shape[0]) - a*P
+        s = spsolve(A, f)
+        total_time = time.time() - start_time
+        print("Solved SS using sparse linear system (%0.2f sec)" % (total_time))
+        iters = 0
+        comp = 0
 
-    s = {int2int[n]:s[n] for n in range(len(s))}
+    s = {idx2node[n]:s[n] for n in range(len(s))}
 
-    return s, time, iters, comp
+    return s, total_time, iters, comp
 
+
+def runLocal(P, positives, negatives=None):
+    unknowns = set(range(P.shape[0])) - set(list(positives))
+    f = np.zeros(P.shape[0])
+    f[positives] = 1
+    if negatives is not None:
+        unknowns = unknowns - set(list(negatives))
+        f[negatives] = -1
+
+    s = csr_matrix.dot(P, f)
+
+    s = {n: s[n] for n in unknowns}
+
+    return s
