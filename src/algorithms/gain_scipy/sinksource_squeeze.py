@@ -42,6 +42,7 @@ class SinkSourceSqueeze:
         self.epsUB = epsUB
         self.rank_topk = rank_topk
         self.rank_all = rank_all
+        self.num_subsample = 500  # num nodes to sample uniformly at random to check if their ranking is fixed
         self.rank_nodes = rank_nodes
         self.ranks_to_compare = ranks_to_compare
         self.verbose = verbose
@@ -53,6 +54,10 @@ class SinkSourceSqueeze:
         self.P, self.f, self.node2idx, self.idx2node = alg_utils.setupScores(
             self.P, self.positives, self.negatives, a=self.a, 
             remove_nonreachable=True, verbose=self.verbose)
+        if len(self.f) == 0:
+            print("WARNING: no unknown nodes were reachable from a positive (P matrix and f vector empty after removing nonreachable nodes).")
+            print("Setting all scores to 0")
+            return [], defaultdict(int)
         # if rank_nodes is specified, map those node ids to the current indices
         if self.rank_nodes is not None:
             self.rank_nodes = set(self.node2idx[n] for n in self.rank_nodes if n in self.node2idx)
@@ -77,7 +82,7 @@ class SinkSourceSqueeze:
             scores[self.idx2node[n]] = all_LBs[n]
         #scores = {self.idx2node[n]:all_LBs[n] for n in range(len(all_LBs))}
 
-        if self.verbose or True:
+        if self.verbose:
             print("SinkSourceSqueeze found top k after %d iterations (%0.3f total sec, %0.3f sec to update)"
                   % (self.num_iters, self.total_time, self.total_update_time))
 
@@ -89,15 +94,17 @@ class SinkSourceSqueeze:
         """
         # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
         R, unranked_nodes, LBs, prev_LBs, UBs = self.initialize_sets()
-        #initial_unranked_nodes = None
+        # use this variable to indicate if we are ranking a subsample of the nodes first
+        initial_unranked_nodes = None
         if self.rank_all is True:
             if self.verbose:
                 print("\tRunning until all nodes are ranked correctly")
-            # see if sampling a subset of nodes will speed-up the ranking
-            initial_unranked_nodes = unranked_nodes.copy()
-            # randomly sample 1/100 of the nodes to check for fixed ranks
-            #unranked_nodes = random.sample(initial_unranked_nodes, len(unranked_nodes) / float(100))
-            unranked_nodes = set(random.sample(initial_unranked_nodes, 500))
+            if len(unranked_nodes) > self.num_subsample:
+                # see if sampling a subset of nodes will speed-up the ranking
+                initial_unranked_nodes = unranked_nodes.copy()
+                # randomly sample 1/100 of the nodes to check for fixed ranks
+                #unranked_nodes = random.sample(initial_unranked_nodes, len(unranked_nodes) / float(100))
+                unranked_nodes = set(random.sample(initial_unranked_nodes, self.num_subsample))
         elif self.rank_nodes is not None:
             if self.verbose:
                 print("\tRunning until the given %d nodes are ranked correctly" % (len(self.rank_nodes)))
@@ -143,8 +150,8 @@ class SinkSourceSqueeze:
                     conflicting_nodes = alg_utils.check_fixed_rankings(LBs, UBs, initial_unranked_nodes,
                             nodes_to_rank=self.rank_nodes) 
                     # if there are many conflicting nodes, then just check a subset
-                    if len(conflicting_nodes) > 500:
-                        unranked_nodes = set(random.sample(conflicting_nodes, 500))
+                    if len(conflicting_nodes) > self.num_subsample:
+                        unranked_nodes = set(random.sample(conflicting_nodes, self.num_subsample))
                     else:
                         conflicting_nodes = None 
                     initial_unranked_nodes = None 
@@ -173,7 +180,7 @@ class SinkSourceSqueeze:
             #print("\t\tdelta_N: %0.4f, LBs[n]: %0.4f, min_delta: %0.5f" % (delta_N, LBs[largest_diff_node], min_delta))
             self.total_update_time += update_time
             if self.verbose:
-                print("\t\t%0.4f sec to update bounds. max_d: %0.4f" % (update_time, max_d))
+                print("\t\t%0.4f sec to update bounds. max_d: %0.2e" % (update_time, max_d))
 
             UB = self.computeUBs(max_f, self.a, self.num_iters)
 
