@@ -142,7 +142,7 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
                     out_file = "%s%s-%d-nets-combined-SWSN.npz" % (
                         weight_swsn, taxon, len(sparse_networks))
                     weight_SWSN(ann_matrix, sparse_networks,
-                                net_names=network_names, out_file=out_file
+                                net_names=network_names, out_file=out_file,
                                 nodes=nodes)
         else:
             sparse_networks, network_names, nodes = create_sparse_net_file(
