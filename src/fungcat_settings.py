@@ -66,13 +66,6 @@ ALGORITHM_OPTIONS = {
     "genemania-ova": "--ova genemania",
 }
 
-#STRING_NETWORKS = {
-#    "2017_10-string": ""
-#    "2017_10-seq-sim-string": ""
-#    }
-# STRING networks are in the individual taxon dirs
-#STRING_TAXON_UNIPROT = "%s/%%s/%%s-uniprot-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
-
 NAME_TO_SHORTNAME = {
     "Neisseria gonorrhoeae FA 1090"                             : "Ng",
     "Peptoclostridium difficile / Clostridioides difficile 630" : "Cd",
@@ -94,6 +87,27 @@ NAME_TO_SHORTNAME = {
     "Shigella dysenteriae serotype 1 (strain Sd197)"            : "Sd",
     "Mycobacterium tuberculosis"                                : "Mt",
 }
+NAME_TO_SHORTNAME2 = {
+    "Neisseria gonorrhoeae FA 1090"                             : "N. gonorrhoeae",
+    "Peptoclostridium difficile / Clostridioides difficile 630" : "C. difficile",
+    "Helicobacter pylori 85962"                                 : "H. pylori",
+    "Klebsiella pneumoniae"                                     : "K. pneumoniae",
+    "Enterococcus faecium DO"                                   : "E. faecium",
+    "Escherichia coli K-12"                                     : "E. coli",
+    "Haemophilus influenzae RD KW20"                            : "H. influenzae",
+    "Bordetella pertussis Tohama I"                             : "B. pertussis",
+    "Burkholderia cepacia"                                      : "B. cepacia",
+    "Clostridium botulinum A str. Hall"                         : "C. botulinum",
+    "Acinetobacter baumannii"                                   : "A. baumannii",
+    "Staphylococcus aureus"                                     : "S. aureus",
+    "Vibrio cholerae O1 biovar El Tor str. N16961"              : "V. cholerae",
+    "Yersinia pestis"                                           : "Y. pestis",
+    "Streptococcus pyogenes"                                    : "S. pyogenes",
+    "Pseudomonas aeruginosa"                                    : "P. aeruginosa",
+    "Salmonella typhimurium / Salmonella enterica"              : "S. typhimurium",
+    "Shigella dysenteriae serotype 1 (strain Sd197)"            : "S. dysenteriae",
+    "Mycobacterium tuberculosis"                                : "M. tuberculosis",
+}
 NAME_TO_TAX = {}
 TAX_TO_NAME = {}
 
@@ -103,7 +117,7 @@ GOA_TAXON_DIR = "%s/taxon" % (GOA_DIR)
 # input files
 GO_FILE = "%s/2017-09-26-go.obo" % (GOA_DIR)
 GOA_FILE = "%s/2017-09-26-goa_uniprot_all.gaf.gz" % (GOA_DIR)
-GO_FILE_NOPARTOF = "%s/2017-09-26-go-no-partof.obo" % (GOA_DIR)
+GO_FILE_NOPARTOF = "%s/2017-09-26-go-nopartof.obo" % (GOA_DIR)
 
 # parsed input files
 # for example: inputs/goa/taxon/22839/22839-goa.gaf
@@ -137,6 +151,7 @@ STRING_CUTOFF = 400
 STRING_TAXON_FILE = "%s/%%s/%%s.links.full.v10.5-%%d.txt" % (STRING_TAXON_DIR)
 # STRING FILE mapped to uniprot IDs
 STRING_TAXON_UNIPROT = "%s/%%s/%%s-uniprot-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
+STRING_TAXON_UNIPROT_FULL = "%s/%%s/%%s-uniprot-full-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
 
 # first column is uniprot ID, last is STRING ID
 UNIPROT_TO_STRING = "inputs/protein-similarity/uniprot-species/uniprot-proteins-19-strains-plus-string.tab"
