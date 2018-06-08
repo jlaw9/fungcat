@@ -17,6 +17,7 @@ ALLOWEDVERSIONS = [
     "2017_10-seq-sim-14",
     "2017_10-seq-sim-x5-string-14",
     "2017_10-seq-sim-x5-string",
+    "2017_10-seq-sim-string-swsn",
     "2017_10-string-14",
     # This is a new version with 14 new species
     "2018_02-seq-sim",
@@ -28,6 +29,7 @@ SEQ_SIM_NETWORKS = {
     "2017_10-seq-sim-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-x5-string-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-x5-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-string-swsn": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     # TODO
     "2018_02-seq-sim": "TODO",
     }
@@ -38,6 +40,7 @@ NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim-string": ['SEQ_SIM', 'STRING'],
     "2017_10-seq-sim-x5-string-14": ['SEQ_SIM', 'STRING'],
     "2017_10-seq-sim-x5-string": ['SEQ_SIM', 'STRING'],
+    "2017_10-seq-sim-string-swsn": ['SEQ_SIM', 'STRING'],
     "2017_10-string": ['STRING'],
     "2017_10-string-14": ['STRING'],
     "2018_02-seq-sim": ['SEQ_SIM'],
@@ -49,6 +52,7 @@ VERSION_SELECTED_STRAINS = {
     "2017_10-seq-sim-string": 'inputs/selected-strains.txt',
     "2017_10-seq-sim-x5-string": 'inputs/selected-strains.txt',
     "2017_10-string": 'inputs/selected-strains.txt',
+    "2017_10-seq-sim-string-swsn": 'inputs/selected-strains.txt',
     "2017_10-seq-sim-14": 'inputs/selected-strains-14.txt',
     "2017_10-seq-sim-x5-string-14": 'inputs/selected-strains-14.txt',
     "2017_10-string-14": 'inputs/selected-strains-14.txt',
