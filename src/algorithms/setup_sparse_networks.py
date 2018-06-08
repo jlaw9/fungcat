@@ -76,9 +76,10 @@ def parse_args(args):
 
     # additional parameters
     group = OptionGroup(parser, 'Additional options')
-    group.add_option('', '--weight-SWSN', action="store_true", default=False,
+    group.add_option('', '--weight-SWSN', type='string', 
             help="Weight and combine the networks using the" +
-                 "Simultaneous Weights with Specific Negatives method")
+                 "Simultaneous Weights with Specific Negatives method." +
+                 "Must specify a prefix for the network")
     group.add_option('', '--forcenet', action="store_true", default=False,
                      help="Force re-building network matrix from scratch")
     #group.add_option('', '--verbose', action="store_true", default=False,
@@ -111,7 +112,7 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
          out_pref_net=None, out_pref_ann=None,
          string_networks=["combined_score"],
          string_cutoff=f_settings.STRING_CUTOFF,
-         weight_swsn=False, forcenet=False,
+         weight_swsn=None, forcenet=False,
 ):
 
     for version in versions:
@@ -139,7 +140,7 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
 
                 if weight_swsn:
                     out_file = "%s%s-%d-nets-combined-SWSN.npz" % (
-                        out_pref_net, taxon, len(sparse_networks))
+                        weight_swsn, taxon, len(sparse_networks))
                     weight_SWSN(ann_matrix, sparse_networks,
                                 net_names=network_names, out_file=out_file)
         else:
@@ -155,7 +156,7 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
 
             if weight_swsn:
                 out_file = "%s%d-nets-combined-SWSN.npz" % (
-                    out_pref_net, len(sparse_networks))
+                    weight_swsn, len(sparse_networks))
                 weight_SWSN(ann_matrix, sparse_networks,
                             net_names=network_names, out_file=out_file)
 
@@ -216,19 +217,19 @@ def write_sparse_net_file(
         sparse_networks, out_file, network_names,
         net_names_file, nodes, node_ids_file):
     #out_file = "%s/%s-net.mat" % (out_dir, version)
-    print("\twriting node2idx labels to %s" % (node_ids_file))
-    with open(node_ids_file, 'w') as out:
-        out.write(''.join(["%s\t%s\n" % (n, i) for i, n in enumerate(nodes)]))
-
     # save this graph into its own matlab file because it doesn't change by GO category
     print("\twriting sparse networks to %s" % (out_file))
     mat_networks = np.zeros(len(sparse_networks), dtype=np.object)
     for i, net in enumerate(network_names):
-        mat_networks[i] = sparse_networks[network_names[i]]
+        mat_networks[i] = sparse_networks[i]
     savemat(out_file, {"Networks":mat_networks})
 
-    print("\twriting network names, which can be used to tell" +
-          "the network using the index in the sparse-nets file, to %s" % (net_names_file))
+    print("\twriting node2idx labels to %s" % (node_ids_file))
+    with open(node_ids_file, 'w') as out:
+        out.write(''.join(["%s\t%s\n" % (n, i) for i, n in enumerate(nodes)]))
+
+    print("\twriting network names, which can be used to figure out " +
+          "which network is at which index in the sparse-nets file, to %s" % (net_names_file))
     with open(net_names_file, 'w') as out:
         out.write(''.join(["%s\n" % (n) for n in network_names]))
 
@@ -256,7 +257,7 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
     *string_net_files*: List of string files containing all 14 STRING network columns
     *string_nets*: List of STRING network column names for which to make a sparse matrix. 
 
-    *returns*: Dictionary of sparse networks, list of network names, 
+    *returns*: List of sparse networks, list of network names, 
         list of proteins in the order they're in in the sparse networks
     """
 
@@ -306,14 +307,14 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
 
     print("\tconverting graph to sparse matrices")
     #sparse_networks = np.zeros(len(net_files)+len(string_net_files), dtype=np.object)
-    sparse_networks = {}
+    sparse_networks = []
     for i, net in enumerate(tqdm(network_names)):
         # default nodelist order is G.nodes()
         sparse_matrix = nx.to_scipy_sparse_matrix(G, nodelist=sorted(idx2node), weight=net)
         # convert to float otherwise matlab won't parse it correctly
         # see here: https://github.com/scipy/scipy/issues/5028
         sparse_matrix = sparse_matrix.astype(float) 
-        sparse_networks[net] = sparse_matrix
+        sparse_networks.append(sparse_matrix)
 
     # save this graph into its own matlab file because it doesn't change by GO category
     #print("\twriting sparse networks to %s" % (out_file))
@@ -377,10 +378,6 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
     #    goids = utils.readItemList(goids_file, 1)
     #else:
     print("\nSetting up annotation matrix")
-    only_functions_file = "inputs/only-functions/rem-neg-iea/rem-neg-iea-500-1000.txt"
-    goterms = run_algs.select_goterms(only_functions_file=only_functions_file) 
-    print("%d GO terms from only_functions_file %s" % (len(goterms), only_functions_file))
-
     #selected_species_file = f_settings.VERSION_SELECTED_STRAINS[version]
     #selected_species = utils.readDict(selected_species_file, 1, 2)
 
@@ -505,6 +502,7 @@ def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None):
         combined_network += alpha[i]*sparse_nets[indices[i]] 
 
     if out_file is not None:
+        utils.checkDir(os.path.dirname(out_file))
         print("\twriting combined network to %s" % (out_file))
         sparse.save_npz(out_file, combined_network)
 
@@ -530,7 +528,6 @@ def _net_normalize(X):
 
     # normalizing the matrix
     deg = X.sum(axis=1).A.flatten()
-    print('here')
     deg = np.divide(1., np.sqrt(deg))
     deg[np.isinf(deg)] = 0 
     # sparse matrix function to make a diagonal matrix
@@ -545,6 +542,7 @@ def run():
     opts = parse_args(sys.argv)
     goterms = run_algs.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
+    print("%d GO terms from only_functions_file and/or specified GO terms" % (len(goterms)))
 
     #goid_pos, goid_neg = parse_pos_neg_files(opts.pos_neg_file) 
 
