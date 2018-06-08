@@ -142,7 +142,8 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
                     out_file = "%s%s-%d-nets-combined-SWSN.npz" % (
                         weight_swsn, taxon, len(sparse_networks))
                     weight_SWSN(ann_matrix, sparse_networks,
-                                net_names=network_names, out_file=out_file)
+                                net_names=network_names, out_file=out_file
+                                nodes=nodes)
         else:
             sparse_networks, network_names, nodes = create_sparse_net_file(
                 version, out_pref_net, selected_strains=selected_strains,
@@ -158,7 +159,8 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
                 out_file = "%s%d-nets-combined-SWSN.npz" % (
                     weight_swsn, len(sparse_networks))
                 weight_SWSN(ann_matrix, sparse_networks,
-                            net_names=network_names, out_file=out_file)
+                            net_names=network_names, out_file=out_file,
+                            nodes=nodes)
 
 
 def create_sparse_net_file(
@@ -474,7 +476,7 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
 #
 
 
-def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None):
+def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None, nodes=None):
     """
     """
 
@@ -505,6 +507,12 @@ def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None):
         utils.checkDir(os.path.dirname(out_file))
         print("\twriting combined network to %s" % (out_file))
         sparse.save_npz(out_file, combined_network)
+        # also write the node ids so it's easier to access
+        # TODO figure out a better way to store this
+        node2idx_file = out_file + "-node-ids.txt"
+        print("\twriting node ids to %s" % (node2idx_file)) 
+        with open(node2idx_file, 'w') as out:
+            out.write(''.join("%s\t%s\n" % (n, i) for i, n in enumerate(nodes)))
 
     return combined_network
 
