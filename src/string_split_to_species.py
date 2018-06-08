@@ -36,6 +36,10 @@ full_column_names["textmining"]              = 14
 full_column_names["textmining_transferred"]  = 15
 full_column_names["combined_score"]          = 16
 
+STRING_NETWORKS = list(full_column_names.keys())[2:-1]
+NON_TRANSFERRED_STRING_NETWORKS = [net for net in STRING_NETWORKS if 'transferred' not in net]
+CORE_STRING_NETWORKS = ["neighborhood", "fusion", "cooccurence", "coexpression", "experiments", "database"]
+
 # Some of the selected species are not found in STRING.
 # For those, I manually selected the closest species in STRING.
 # In those cases, I need to get the interactions and mappings from the closest STRING speices, but write the interactions file to the selected species
@@ -219,11 +223,12 @@ def map_string_to_uniprot(string_species, score_cutoff=150, only_combined_score=
         if not only_combined_score:
             out_file = f_settings.STRING_TAXON_UNIPROT_FULL % (out_species, out_species, score_cutoff)
             print("\twriting full links to %s" % (out_file))
+            write_header = False 
             if not os.path.isfile(out_file):
                 write_header = True
             out = open(out_file, 'a')
             if write_header:
-                out.write('\t'.join(full_column_names) + '\n')
+                out.write("#" + '\t'.join(full_column_names) + '\n')
 
         with open(string_file, 'r') as f:
             for line in f:
