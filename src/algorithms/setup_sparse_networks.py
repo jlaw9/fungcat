@@ -224,7 +224,7 @@ def write_sparse_net_file(
     mat_networks = np.zeros(len(sparse_networks), dtype=np.object)
     for i, net in enumerate(network_names):
         mat_networks[i] = sparse_networks[i]
-    savemat(out_file, {"Networks":mat_networks})
+    savemat(out_file, {"Networks":mat_networks}, do_compression=True)
 
     print("\twriting node2idx labels to %s" % (node_ids_file))
     with open(node_ids_file, 'w') as out:
