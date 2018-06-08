@@ -1,17 +1,20 @@
 
+import os, sys
 from scipy import sparse
 from scipy.sparse import csr_matrix, csgraph
 import numpy as np
 import networkx as nx
 from collections import defaultdict
 import time
+sys.path.append("src")
+import utils.file_utils as utils
 
 
 def convert_nodes_to_int(G):
     index = 0
     node2int = {}
     int2node = {}
-    for n in G.nodes():
+    for n in sorted(G.nodes()):
         node2int[n] = index
         int2node[index] = n
         index += 1
@@ -73,12 +76,18 @@ def setupScores(P, positives, negatives=None, a=1, remove_nonreachable=True, ver
     # f contains the fixed amount of score coming from positive nodes
     f = a*csr_matrix.dot(P, pos_vec)
 
-    if negatives is None:
-        fixed_nodes = positives
-    else:
-        fixed_nodes = np.concatenate([positives, negatives])
-
     if remove_nonreachable is True:
+        node2idx, idx2node = {}, {}
+        # remove the negatives first and then remove the non-reachable nodes
+        if negatives is not None:
+            node2idx, idx2node = build_index_map(range(len(f)), negatives)
+            P = delete_nodes(P, negatives)
+            f = np.delete(f, negatives)
+            #fixed_nodes = np.concatenate([positives, negatives])
+            positives = set(node2idx[n] for n in positives)
+        positives = set(list(positives))
+        fixed_nodes = positives 
+
         start = time.time()
         # also remove nodes that aren't reachable from a positive 
         # find the connected_components. If a component doesn't have a positive, then remove the nodes of that component
@@ -97,25 +106,30 @@ def setupScores(P, positives, negatives=None, a=1, remove_nonreachable=True, ver
 
         non_reachable_ccs = set(ccs.keys()) - pos_comp
         not_reachable_from_pos = set(n for cc in non_reachable_ccs for n in ccs[cc])
+#        # use matrix multiplication instead
+#        reachable_nodes = get_reachable_nodes(P, positives)
+#        print(len(reachable_nodes), P.shape[0] - len(reachable_nodes))
         if verbose:
             print("%d nodes not reachable from a positive. Removing them from the graph" % (len(not_reachable_from_pos)))
             print("\ttook %0.4f sec" % (time.time() - start))
-        fixed_nodes = np.array(list(set(list(fixed_nodes)).union(not_reachable_from_pos)))
+        # combine them to be removed
+        fixed_nodes = positives | not_reachable_from_pos
 
-    # keep track of the original node integers 
-    # to be able to map back to the original node names
-    node2idx = {}
-    idx2node = {}
-    index_diff = 0
-    for i in range(len(f)):
-        if i in fixed_nodes:
-            index_diff += 1
-            continue
-        idx2node[i - index_diff] = i
-        node2idx[i] = i - index_diff
-
-    # remove the fixed nodes from the graph
+        node2idx2, idx2node2 = build_index_map(range(len(f)), fixed_nodes)
+        if negatives is not None:
+            # change the mapping to be from the deleted nodes to the original node ids
+            node2idx = {n: node2idx2[node2idx[n]] for n in node2idx if node2idx[n] in node2idx2}
+            idx2node = {node2idx[n]: n for n in node2idx}
+        else:
+            node2idx, idx2node = node2idx2, idx2node2 
+    else:
+        fixed_nodes = positives 
+        if negatives is not None:
+            fixed_nodes = np.concatenate([positives, negatives])
+        node2idx, idx2node = build_index_map(range(len(f)), set(list(fixed_nodes)))
     # removing the fixed nodes is slightly faster than selecting the unknown rows
+    # remove the fixed nodes from the graph
+    fixed_nodes = np.asarray(list(fixed_nodes)) if not isinstance(fixed_nodes, np.ndarray) else fixed_nodes
     P = delete_nodes(P, fixed_nodes)
     # and from f
     f = np.delete(f, fixed_nodes)
@@ -123,6 +137,49 @@ def setupScores(P, positives, negatives=None, a=1, remove_nonreachable=True, ver
     assert P.shape[1] == len(f), "f doesn't match size of P"
 
     return P, f, node2idx, idx2node
+
+
+def build_index_map(nodes, nodes_to_remove):
+    """
+    *returns*: a dictionary of the original node ids/indices to the current indices, as well as the reverse
+    """
+    # keep track of the original node integers 
+    # to be able to map back to the original node names
+    node2idx = {}
+    idx2node = {}
+    index_diff = 0
+    for i in nodes:
+        if i in nodes_to_remove:
+            index_diff += 1
+            continue
+        idx2node[i - index_diff] = i
+        node2idx[i] = i - index_diff
+
+    return node2idx, idx2node 
+
+
+#def get_reachable_nodes(P, start_nodes):
+#    """
+#    Get the nodes that are reachable from a set of starting nodes
+#    *returns*: a np array of reachable nodes
+#    """
+#    start = np.zeros(P.shape[0])
+#    start[list(start_nodes)] += 1
+#    #Pbool = P.astype(bool)
+#    #visited = sparse.diags(start).astype(bool)
+#    visited = sparse.diags(start)
+#    # R starts out as a matrix of zeros
+#    R = sparse.csr_matrix(P.shape)
+#    while visited.count_nonzero() > 0:
+#        R = R + visited
+#        # TODO the graph is undirected so it keeps repeating cycles
+#        # I need a way to not follow cycles
+#        visited = visited.dot(P)
+#        print(visited.count_nonzero())
+#    # return all of the reachable nodes
+#    reachable_nodes = set(R.getnnz(axis=0).nonzero()[0])
+#    return reachable_nodes
+
 
 
 def check_fixed_rankings(LBs, UBs, unranked_nodes, nodes_to_rank=None):
@@ -260,3 +317,77 @@ def select_nodes(mat, indices):
 #    #print(len(mask))
 #    mask[indices] = False
 #    return mat[:,mask]
+
+
+def parse_pos_neg_file(pos_neg_file, goterms=None):
+    print("Reading positive and negative annotations for each protein from %s" % (pos_neg_file))
+    goid_prots = {}
+    goid_neg = {}
+    all_prots = set()
+    # TODO possibly use pickle
+    if not os.path.isfile(pos_neg_file):
+        print("Warning: %s file not found" % (pos_neg_file))
+        return goid_prots, goid_neg
+
+        #for goid, pos_neg_assignment, prots in utils.readColumns(pos_neg_file, 1,2,3):
+    with open(pos_neg_file, 'r') as f:
+        for line in f:
+            if line[0] == '#':
+                continue
+            goid, pos_neg_assignment, prots = line.rstrip().split('\t')[:3]
+            if goterms and goid not in goterms:
+                continue
+            prots = set(prots.split(','))
+            if int(pos_neg_assignment) == 1:
+                goid_prots[goid] = prots
+            elif int(pos_neg_assignment) == -1:
+                goid_neg[goid] = prots
+
+            all_prots.update(prots)
+
+    print("\t%d GO terms, %d prots" % (len(goid_prots), len(all_prots)))
+
+    return goid_prots, goid_neg
+
+
+def parse_gain_file(gain_file, goterms=None):
+    print("Reading annotations from GAIN file %s. Assuming annotations have already been propogated up the GO DAG" % (gain_file))
+    goid_prots = defaultdict(set)
+
+    with open(gain_file, 'r') as f:
+        # columns: 'orf', 'goid', 'hierarchy', 'evidencecode', 'annotation type' (described here: http://bioinformatics.cs.vt.edu/~murali/software/biorithm/gain.html)
+        header_line = f.readline().rstrip().split('\t')
+        # *orf* A systematic name for the gene.
+        orf_index = header_line.index('orf')
+        # *goid* The ID of the GO function. You can leave in the "GO:0+" prefix for a function. GAIN will strip it out.
+        goid_index = header_line.index('goid')
+        goname_index = header_line.index('goname')
+        # *hierarchy* The GO category the function belongs to ("c", "f", and "p")
+        hierarchy_index = header_line.index('hierarchy')
+        # *evidencecode* The evidence code for an annotation
+        evidencecode_index = header_line.index('evidencecode')
+        # *annotation type* The value is either 1 (annotated), 0 (unknown), or -1 (not annotated)
+        ann_index = header_line.index('annotation type')
+
+        for line in f:
+            line = line.rstrip().split('\t')
+            prot = line[orf_index]
+            goid = line[goid_index]
+            # convert the goterm id to the full ID
+            goid = "GO:" + "0"*(7-len(goid)) + goid
+            goname = line[goname_index]
+            hierarchy = line[hierarchy_index]
+            evidencecode = line[evidencecode_index]
+            annotation_type = line[ann_index]
+
+            # only track the annotations that are positive
+            if annotation_type != "1":
+                continue
+
+            #hierarchies[goid] = hierarchy
+            #gonames[goid] = goname
+            if goterms is None or goid in goterms:
+                goid_prots[goid].add(prot)
+
+    return goid_prots
+
