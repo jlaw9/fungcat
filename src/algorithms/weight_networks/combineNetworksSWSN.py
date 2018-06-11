@@ -9,7 +9,7 @@ from tqdm import tqdm, trange
 __author__ = "Jeff Law"
 
 # citation:
-#Youngs, N., Penfold-Brown, D., Drew, K., Shasha, D., & Bonneau, R., Parametric bayesian priors and better choice of negative examples improve protein function prediction, Bioinformatics, 29(9), 1190–1198 (2013).  http://dx.doi.org/10.1093/bioinformatics/btt110
+#Youngs, N., Penfold-Brown, D., Drew, K., Shasha, D., & Bonneau, R., Parametric bayesian priors and better choice of negative examples improve protein function prediction, Bioinformatics, 29(9), 1190-1198 (2013).  http://dx.doi.org/10.1093/bioinformatics/btt110
 
 
 def combineNetworksSWSN(y, W):

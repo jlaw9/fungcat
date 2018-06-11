@@ -514,6 +514,12 @@ def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None, nodes=No
         with open(node2idx_file, 'w') as out:
             out.write(''.join("%s\t%s\n" % (n, i) for i, n in enumerate(nodes)))
 
+        # write the alpha/weight of the networks as well
+        net_weight_file = out_file + "-net-weights.txt"
+        print("\twriting network weights to %s" % (net_weight_file)) 
+        with open(net_weight_file, 'w') as out:
+            out.write(''.join("%s\t%s\n" % (net_names[idx], str(alpha[i])) for i, idx in enumerate(indices)))
+
     return combined_network
 
 
