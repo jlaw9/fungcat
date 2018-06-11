@@ -2,6 +2,12 @@
 ## Setup sparse matrices
 Example call to setup sparse matrices for the core STRING networks and the GO annotations for 50-1000 proteins annotated with non-IEA.
 
+Setting up the networks takes the longest, but once it finishes, you can easily re-run the script with different 
+sets of GO annotations as the script will use the `-node-ids.txt` file generated from the network part. 
+
+As always, use `--help` to see what the different options are and what they do.
+
+
 ```sh
 python src/algorithms/setup_sparse_networks.py  \
   --version 2017_10-string \
