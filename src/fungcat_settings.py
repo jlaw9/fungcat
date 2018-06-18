@@ -10,19 +10,6 @@ import socket
 #       |
 #        - version2
 
-ALLOWEDVERSIONS = [
-    "2017_10-seq-sim",
-    "2017_10-string",
-    "2017_10-seq-sim-string",
-    "2017_10-seq-sim-14",
-    "2017_10-seq-sim-x5-string-14",
-    "2017_10-seq-sim-x5-string",
-    "2017_10-seq-sim-string-swsn",
-    "2017_10-string-14",
-    # This is a new version with 14 new species
-    "2018_02-seq-sim",
-    ]
-
 SEQ_SIM_NETWORKS = {
     "2017_10-seq-sim": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
@@ -30,8 +17,15 @@ SEQ_SIM_NETWORKS = {
     "2017_10-seq-sim-x5-string-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-x5-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-string-swsn": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2018_06-seq-sim-e1e-50": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-50.txt",
+    "2018_06-seq-sim-e1e-25": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-25.txt",
+    "2018_06-seq-sim-e1e-10": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-10.txt",
+    "2018_06-seq-sim-e1e-6": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-6.txt",
+    "2018_06-seq-sim-e1e-4": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-4.txt",
+    "2018_06-seq-sim-e0_01": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e0_01.txt",
+    "2018_06-seq-sim-e0_1": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e0_1.txt",
     # TODO
-    "2018_02-seq-sim": "TODO",
+    #"2018_02-seq-sim": "TODO",
     }
 
 NETWORK_VERSION_INPUTS = {
@@ -43,9 +37,34 @@ NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim-string-swsn": ['SEQ_SIM', 'STRING'],
     "2017_10-string": ['STRING'],
     "2017_10-string-14": ['STRING'],
-    "2018_02-seq-sim": ['SEQ_SIM'],
+    #"2018_02-seq-sim": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-50": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-25": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-10": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-6": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-4": ['SEQ_SIM'],
+    "2018_06-seq-sim-e0_01": ['SEQ_SIM'],
+    "2018_06-seq-sim-e0_1": ['SEQ_SIM'],
     }
 
+ALLOWEDVERSIONS = sorted(NETWORK_VERSION_INPUTS.keys())
+#ALLOWEDVERSIONS = [
+#    "2017_10-seq-sim",
+#    "2017_10-string",
+#    "2017_10-seq-sim-string",
+#    "2017_10-seq-sim-14",
+#    "2017_10-seq-sim-x5-string-14",
+#    "2017_10-seq-sim-x5-string",
+#    "2017_10-seq-sim-string-swsn",
+#    "2017_10-string-14",
+#    # This is a new version with 14 new species
+#    "2018_02-seq-sim",
+#    # modify the sequence similarity e-value cutoff
+#    "2018_06-seq-sim-e1e-6",
+#    "2018_06-seq-sim-e1e-4",
+#    "2018_06-seq-sim-e0_01",
+#    "2018_06-seq-sim-e0_1",
+#    ]
 
 VERSION_SELECTED_STRAINS = {
     "2017_10-seq-sim": 'inputs/selected-strains.txt',
@@ -53,10 +72,17 @@ VERSION_SELECTED_STRAINS = {
     "2017_10-seq-sim-x5-string": 'inputs/selected-strains.txt',
     "2017_10-string": 'inputs/selected-strains.txt',
     "2017_10-seq-sim-string-swsn": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e1e-50": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e1e-25": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e1e-10": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e1e-6": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e1e-4": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e0_01": 'inputs/selected-strains.txt',
+    "2018_06-seq-sim-e0_1": 'inputs/selected-strains.txt',
     "2017_10-seq-sim-14": 'inputs/selected-strains-14.txt',
     "2017_10-seq-sim-x5-string-14": 'inputs/selected-strains-14.txt',
     "2017_10-string-14": 'inputs/selected-strains-14.txt',
-    "2018_02-seq-sim": "inputs/selected-strains/2018_02-strains-14.txt",
+    #"2018_02-seq-sim": "inputs/selected-strains/2018_02-strains-14.txt",
 }
 SELECTED_STRAINS = "inputs/selected-strains.txt"
 
@@ -157,10 +183,22 @@ STRING_TAXON_FILE = "%s/%%s/%%s.links.full.v10.5-%%d.txt" % (STRING_TAXON_DIR)
 STRING_TAXON_UNIPROT = "%s/%%s/%%s-uniprot-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
 STRING_TAXON_UNIPROT_FULL = "%s/%%s/%%s-uniprot-full-links-v10.5-%%d.txt" % (STRING_TAXON_DIR)
 
-# first column is uniprot ID, last is STRING ID
-UNIPROT_TO_STRING = "inputs/protein-similarity/uniprot-species/uniprot-proteins-19-strains-plus-string.tab"
 # first column is uniprot ID, second is organism ID
-UNIPROT_TO_SPECIES = "inputs/protein-similarity/uniprot-species/2017-10-17-uniprot-prots-19-species.tab"
+UNIPROT_TO_SPECIES = "inputs/protein-similarity/uniprot-species/2017-10-17-uniprot-prots-19-species-plus-string.tab"
+# first column is uniprot ID, last is STRING ID
+# STRING is now included in the UNIPROT_TO_SPECIES file
+# TODO update scripts to use the UNIPROT_TO_SPECIES variable
+UNIPROT_TO_STRING = UNIPROT_TO_SPECIES
+VERSION_UNIPROT_TO_SPECIES = {
+    "2018_06-seq-sim-e1e-50": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e1e-25": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e1e-10": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e1e-6": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e1e-4": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e0_01": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    "2018_06-seq-sim-e0_1": 'inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab',
+    }
+VERSION_UNIPROT_TO_STRING = VERSION_UNIPROT_TO_SPECIES
 
 # The epsilon value (convergence criteria for SinkSource and GeneMANIA) is hard-coded, 
 # so I had to re-build biorithm for each of the values we wanted to test
@@ -213,6 +251,7 @@ def set_version(version, epsilon=DEFAULT_GAIN_EPSILON):
     global VERSION, INPUTSPREFIX, RESULTSPREFIX, NETWORK
     global BIORITHM
     global NAME_TO_TAX, TAX_TO_NAME
+    global UNIPROT_TO_SPECIES, UNIPROT_TO_STRING
 
     VERSION = version
     print("Using version '%s'" % (VERSION))
@@ -224,6 +263,9 @@ def set_version(version, epsilon=DEFAULT_GAIN_EPSILON):
     selected_strains = utils.readItemSet(VERSION_SELECTED_STRAINS[VERSION], 1)
     TAX_TO_NAME = utils.readDict(VERSION_SELECTED_STRAINS[VERSION], 1,2)
     NAME_TO_TAX = utils.readDict(VERSION_SELECTED_STRAINS[VERSION], 2,1)
+    if version in VERSION_UNIPROT_TO_SPECIES:
+        UNIPROT_TO_SPECIES = VERSION_UNIPROT_TO_SPECIES[version]
+        UNIPROT_TO_STRING = VERSION_UNIPROT_TO_STRING[version]
 
     # set the biorithm/gain build according to the epsilon value it was built with
     BIORITHM = BIORITHM_GAIN_EPSILONS[epsilon]
