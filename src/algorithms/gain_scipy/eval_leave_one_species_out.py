@@ -14,6 +14,8 @@ import fungcat_settings as f_settings
 import run_algs
 import alg_utils
 import src.algorithms.setup_sparse_networks as setup
+import igacat.go_term_prediction_examples.go_term_prediction_examples as go_examples
+import algorithms.aptrank.run_birgrank as run_birgrank
 from scipy import sparse
 import numpy as np
 
@@ -68,6 +70,8 @@ def parse_args(args):
 
     # additional parameters
     group = OptionGroup(parser, 'Additional options')
+    group.add_option('-b', '--obo-file', type='string', default=f_settings.GO_FILE,
+                     help="GO OBO file which contains the GO DAG. Used if running AptRank/BirgRank. Default: %s" % (f_settings.GO_FILE))
     group.add_option('-T', '--taxon', type='string', action='append',
                       help="Specify the species taxonomy ID to use to be left out. Multiple may be specified. Otherwise, all species will be used")
     group.add_option('-W', '--num-pred-to-write', type='int', default=100,
@@ -118,7 +122,7 @@ def parse_args(args):
 
 
 def main(version, exp_name, W, prots, ann_matrix, goids,
-         algorithms, opts, taxons=None, alpha=0.8):
+         algorithms, opts, taxons=None, alpha=0.8, dag_matrix=None):
     # option to use negative examples when evaluating predictions
     #use_negatives_for_eval = True 
     # start with less GO terms
@@ -127,6 +131,10 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
         exp_name += "-use-neg" 
     else:
         exp_name += "-non-pos-neg" 
+
+    # TODO make this more streamlined
+    if 'birgrank' in algorithms:
+        dag_matrix, pos_matrix, dag_goids = setup_h_ann_matrices(prots, opts.obo_file, opts.pos_neg_file, goterms=goterms)
 
     # set the version
     # selected species
@@ -198,6 +206,17 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
             pos_neg_arr[list(test_neg)] = -1
             test_ann_mat[i] = pos_neg_arr
 
+        if 'birgrank' in algorithms:
+            # TODO the matrix for BirgRank and the train_matrix do not have the same goids. 
+            # I need to build a pos_mat with the train_matrix annotations
+            train_pos_mat = sparse.lil_matrix(pos_matrix.shape)
+            dag_goids2idx = {g: i for i, g in enumerate(dag_goids)}
+            for i in range(len(goids)):
+                dag_goid_idx = dag_goids2idx[goids[i]]
+                train_pos_mat[dag_goid_idx] = train_ann_mat[i]
+            # now set the negatives to 0 as birgrank doesn't use negatives
+            train_pos_mat[train_pos_mat < 0] = 0
+
         #s_goterms = set(goid_pos.keys()) & set(test_goid_pos.keys())
         tqdm.write("\n" + "-"*30)
         #print("\n" + "-"*30)
@@ -229,7 +248,13 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
                 k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=[alpha],
                 num_pred_to_write=opts.num_pred_to_write, verbose=opts.verbose, 
                 forcealg=opts.forcealg)
-            goid_scores = alg_runner.main()
+            if alg == 'birgrank':
+                goid_scores = alg_runner.run_aptrank_with_params(
+                    train_pos_mat, dag_matrix, alg=alg, alpha=alpha) 
+                curr_goids = dag_goids.copy() 
+            else:
+                curr_goids = goids.copy()
+                goid_scores = alg_runner.main()
             # this will write an file containing the fmax for each goterm 
             # with the taxon name in the name of the file
             write_prec_rec = False 
@@ -238,13 +263,47 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
                 write_prec_rec = True 
 
             # now evaluate 
+            out_dir = "outputs/%s/all/%s/%s" % (version, alg, exp_name)
+            utils.checkDir(out_dir)
             out_pref = "%s/ground-truth-%sl%d-" % (
-                alg_runner.out_dir, 'unw-' if opts.unweighted else '',
+                out_dir, 'unw-' if opts.unweighted else '',
                 0 if alg_runner.ss_lambda is None else int(alg_runner.ss_lambda))
             alg_runner.evaluate_ground_truth(
-                goid_scores, test_ann_mat, goids, out_pref,
+                goid_scores, curr_goids, test_ann_mat, out_pref,
                 non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
                 taxon=s, write_prec_rec=write_prec_rec)
+
+
+def setup_h_ann_matrices(prots, obo_file, pos_neg_files, goterms=None):
+    # parse the go_dags first as it also sets up the goid_to_category dictionary
+    # TODO store the go dags as a file 
+    go_dags = go_examples.parse_obo_file_and_build_dags(obo_file)
+
+    # combine the matrices from bp and mf
+    # would it make a difference running them together vs separately? I guess potentially it could
+    # especially if I included part_of edges
+    # TODO the hstack doesn't actually work yet
+    dag_matrix = sparse.csr_matrix((0,0))
+    ann_matrix = sparse.csr_matrix((0,0))
+    goids = []
+    # TODO build a matrix with the direct annotations (i.e., from the gaf file)
+        # propagate the predictions(?)
+    # for now, just use all of the propagated annotations
+    # and then evaluate using the scores
+    for pos_neg_file in pos_neg_files:
+        if 'bp' in pos_neg_file:
+            h = 'bp'
+        elif 'mf' in pos_neg_file:
+            h = 'mf'
+        elif 'cc' in pos_neg_file:
+            h = 'cc'
+        curr_dag_matrix, curr_ann_matrix, curr_goids = run_birgrank.build_h_ann_matrices(
+            prots, go_dags, pos_neg_files=[pos_neg_file], h=h, goterms=goterms)
+        dag_matrix = sparse.hstack([dag_matrix,curr_dag_matrix])
+        ann_matrix = sparse.hstack([ann_matrix,curr_ann_matrix])
+        goids += curr_goids
+
+    return dag_matrix, ann_matrix, goids
 
 
 if __name__ == "__main__":
@@ -252,15 +311,16 @@ if __name__ == "__main__":
     goterms = alg_utils.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
 
-    #goid_pos, goid_neg = run_algs.parse_pos_neg_files(opts.pos_neg_file, goterms=goterms) 
+    #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(opts.pos_neg_file, goterms=goterms) 
     # load the network matrix and protein IDs
     net_file = opts.net_file
     if net_file is None:
         _, _, net_file, _ = f_settings.set_version(opts.version) 
     W, prots = alg_utils.setup_sparse_network(net_file)
+
     # now build the annotation matrix
     ann_matrix, goids = setup.setup_sparse_annotations(opts.pos_neg_file, goterms, prots,
-                             selected_species=None, taxon=None)
+                            selected_species=None, taxon=None)
 
     for alpha in opts.alpha:
         main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,

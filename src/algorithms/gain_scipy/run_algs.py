@@ -39,6 +39,7 @@ ALGORITHMS = [
     "sinksource",  # same as sinksource-ova, but with the option of using lambda and/or alpha
     "localplus",  # same as local-ovn, but with the option of using lambda and/or alpha
     "local",  # same as local-ova, but with the option of using lambda and/or alpha
+    "birgrank",
     ]
 
 # These algorithms don't use any negative examples
@@ -172,42 +173,47 @@ class Alg_Runner:
 
         return goid_scores
 
-#    def run_aptrank_with_params(self, hierarchy_mat, alg='birgrank',
-#                                alpha=.5, theta=.5, mu=.5, out_pref=None):
-#        """ Run a protein-based algorithm that uses the hierarchy
-#        *hierarchy_matrix*: matrix of hierarchy relationships
-#        *ann_matrix*: matrix of goterm - protein annotations (1 or 0)
-#        
-#        *returns*: 
-#        """
-#
-#        assert (self.ann_matrix.shape[0] == hierarchy_mat.shape[0]), \
-#            "Error: annotation and hierarchy matrices " + \
-#            "do not have the same shape: %d, %d" % (
-#                self.ann_matrix.shape[0], hierarchy_mat.shape[0])
-#
-#        # remove the negatives as aptrank doesn't use them
-#        pos_mat = self.ann_matrix[self.ann_matrix > 0]
-#        if alg == 'birgrank':
-#            Xh = birgRank(self.P, pos_mat.transpose(), hierarchy_mat,
-#                        alpha=alpha, theta=theta, mu=mu)
-#            Xh = Xh.T
-#        # now write the scores to a file
-#        if out_pref is not None:
-#            out_file = "%sa%s-t%s-m%s.txt" % (
-#                out_pref, str(alpha).replace('.', '_'),
-#                str(theta).replace('.', '_'), str(mu).replace('.', '_'))
-#            print("\twriting top %d scores to %s" % (self.num_pred_to_write, out_file))
-#
-#            with open(out_file, 'w') as out:
-#                for i in range(Xh.shape[0]):
-#                    scores = Xh[i].toarray().flatten()
-#                    # convert the nodes back to their names, and make a dictionary out of the scores
-#                    scores = {self.prots[i]:s for i, s in enumerate(scores)}
-#                    self.write_scores_to_file(scores, goid=self.goids[i], file_handle=out,
-#                            num_pred_to_write=self.num_pred_to_write)
-#
-#        return Xh
+    def run_aptrank_with_params(self, pos_mat, hierarchy_mat, alg='birgrank',
+                                alpha=.5, theta=.5, mu=.5, out_pref=None):
+        """ Run a protein-based algorithm that uses the hierarchy
+        *hierarchy_matrix*: matrix of hierarchy relationships
+        *pos_matrix*: matrix of goterm - protein annotations (1 or 0).
+            Normally these would be the leaf annotations, not propagated
+
+        *returns*: a matrix of prediction scores with the same
+            dimensions as pos_mat
+        """
+
+        assert (pos_mat.shape[0] == hierarchy_mat.shape[0]), \
+            "Error: annotation and hierarchy matrices " + \
+            "do not have the same shape: %d, %d" % (
+                pos_mat.shape[0], hierarchy_mat.shape[0])
+
+        # remove the negatives as aptrank doesn't use them
+        #pos_mat = self.ann_matrix.copy()
+        #pos_mat[pos_mat < 0] = 0
+        if alg == 'birgrank':
+            Xh = birgRank(self.P, pos_mat.transpose(), hierarchy_mat,
+                        alpha=alpha, theta=theta, mu=mu)
+            Xh = Xh.T
+        else:
+            print("alg %s not yet implemented." % (alg))
+            return 
+        # now write the scores to a file
+        if out_pref is not None:
+            out_file = "%sa%s-t%s-m%s.txt" % (
+                out_pref, str(alpha).replace('.', '_'),
+                str(theta).replace('.', '_'), str(mu).replace('.', '_'))
+            print("\twriting top %d scores to %s" % (self.num_pred_to_write, out_file))
+
+            with open(out_file, 'w') as out:
+                for i in range(Xh.shape[0]):
+                    scores = Xh[i].toarray().flatten()
+                    # convert the nodes back to their names, and make a dictionary out of the scores
+                    scores = {self.prots[i]:s for i, s in enumerate(scores)}
+                    self.write_scores_to_file(scores, goid=self.goids[i], file_handle=out,
+                            num_pred_to_write=self.num_pred_to_write)
+        return Xh
 
     def run_alg_with_params(self, alg, out_pref=None):
         """ Call the appropriate algorithm's function
@@ -576,16 +582,18 @@ class Alg_Runner:
         return params_results
 
     def evaluate_ground_truth(
-            self, goid_scores, true_ann_matrix, goids, out_pref,
+            self, goid_scores, goids, true_ann_matrix, out_pref,
             non_pos_as_neg_eval=False, taxon='-',
             write_prec_rec=False):
+
+        score_goids2idx = {g: i for i, g in enumerate(goids)}
         print("Computing fmax from ground truth of %d goterms" % (true_ann_matrix.shape[0]))
         goid_fmax = {}
         goid_num_pos = {} 
         goid_prec_rec = {}
         #curr_goid2idx = {g: i for i, g in enumerate(goids)}
         for i in tqdm(range(true_ann_matrix.shape[0]), total=true_ann_matrix.shape[0]):
-            goid = goids[i]
+            goid = self.goids[i]
             # make sure the scores are actually available first
             #if goid not in goid_scores:
             #    print("WARNING: goid %s not in goid_scores" % (goid))
@@ -600,7 +608,7 @@ class Alg_Runner:
             positives = np.where(goid_ann > 0)[0]
             # to get the scores, map the current goid index to the
             # index of the goid in the scores matrix
-            scores = goid_scores[self.goid2idx[goid]].toarray().flatten()
+            scores = goid_scores[score_goids2idx[goid]].toarray().flatten()
             # convert the scores to a dictionary
             scores = {i: s for i,s in enumerate(scores)}
             # this was already done
@@ -845,25 +853,6 @@ def parse_args(args):
     opts.epsUB = opts.epsUB if opts.epsUB is not None else [0]
 
     return opts
-
-
-def parse_pos_neg_files(pos_neg_files, goterms=None):
-    # get the positives and negatives from the matrix
-    all_goid_prots = {}
-    all_goid_neg = {}
-    if len(pos_neg_files) == 1 and pos_neg_files[0] == '-':
-        print("Using GAIN annotations instead of pos_neg_file")
-        # TODO compare the predictions made by GAIN and my implementation
-        all_goid_prots = alg_utils.parse_gain_file(f_settings.GOA_ALL_FUN_FILE_NOIEA)
-        all_goid_neg = {goid: set() for goid in all_goid_prots} 
-    else:
-        for pos_neg_file in pos_neg_files:
-            #goid_prots, goid_neg = self.parse_pos_neg_matrix(self.pos_neg_file)
-            goid_prots, goid_neg = alg_utils.parse_pos_neg_file(pos_neg_file, goterms=goterms)
-            all_goid_prots.update(goid_prots)
-            all_goid_neg.update(goid_neg)
-
-    return all_goid_prots, all_goid_neg
 
 
 def run():

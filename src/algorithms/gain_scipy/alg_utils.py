@@ -24,6 +24,25 @@ def select_goterms(only_functions_file=None, goterms=None):
     return selected_goterms
 
 
+def parse_pos_neg_files(pos_neg_files, goterms=None):
+    # get the positives and negatives from the matrix
+    all_goid_prots = {}
+    all_goid_neg = {}
+    if len(pos_neg_files) == 1 and pos_neg_files[0] == '-':
+        print("Using GAIN annotations instead of pos_neg_file")
+        # TODO compare the predictions made by GAIN and my implementation
+        all_goid_prots = parse_gain_file(f_settings.GOA_ALL_FUN_FILE_NOIEA)
+        all_goid_neg = {goid: set() for goid in all_goid_prots} 
+    else:
+        for pos_neg_file in pos_neg_files:
+            #goid_prots, goid_neg = self.parse_pos_neg_matrix(self.pos_neg_file)
+            goid_prots, goid_neg = parse_pos_neg_file(pos_neg_file, goterms=goterms)
+            all_goid_prots.update(goid_prots)
+            all_goid_neg.update(goid_neg)
+
+    return all_goid_prots, all_goid_neg
+
+
 def parse_pos_neg_file(pos_neg_file, goterms=None):
     print("Reading positive and negative annotations for each protein from %s" % (pos_neg_file))
     goid_prots = {}
@@ -205,6 +224,10 @@ def get_goid_pos_neg(ann_matrix, i):
     goid_ann = ann_matrix[i,:].toarray().flatten()
     positives = np.where(goid_ann > 0)[0]
     negatives = np.where(goid_ann < 0)[0]
+    # may be faster
+    #goid_ann = ann_matrix[i]
+    #positives = (goid_ann > 0)[1]
+    #negatives = (goid_ann < 0)[1]
     return positives, negatives
 
 
