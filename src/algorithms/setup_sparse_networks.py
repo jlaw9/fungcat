@@ -552,7 +552,7 @@ def _net_normalize(X):
 def run():
     #versions = ["2017_10-seq-sim", "2017_10-seq-sim-x5-string"]
     opts = parse_args(sys.argv)
-    goterms = run_algs.select_goterms(
+    goterms = alg_utils.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
     print("%d GO terms from only_functions_file and/or specified GO terms" % (len(goterms)))
 
