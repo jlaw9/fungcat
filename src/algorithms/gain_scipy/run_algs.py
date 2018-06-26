@@ -63,7 +63,7 @@ class Alg_Runner:
             rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
             taxon=None, num_pred_to_write=100, 
             only_cv=False, cross_validation_folds=None, 
-            forcenet=False, forcealg=False, verbose=False):
+            forcenet=False, forcealg=False, verbose=False, progress_bar=True):
         """
         *eps*: Convergence cutoff for sinksource and sinksourceplus
         """
@@ -98,6 +98,8 @@ class Alg_Runner:
         self.forcenet = forcenet
         self.forcealg = forcealg
         self.verbose = verbose
+        # option to display progress bar while iterating over GO terms
+        self.progress_bar = progress_bar
 
         if self.unweighted is True:
             print("\tsetting all edge weights to 1 (unweighted)")
@@ -171,7 +173,10 @@ class Alg_Runner:
         else:
             print("%s already exists. Use --forcealg to overwrite it" % (out_file))
 
-        return goid_scores
+        if self.only_cv is False:
+            return goid_scores
+        else:
+            return
 
     def run_aptrank_with_params(self, pos_mat, hierarchy_mat, alg='birgrank',
                                 alpha=.5, theta=.5, mu=.5, out_pref=None):
@@ -325,7 +330,7 @@ class Alg_Runner:
                 rank_fh.write("#goterm\tnum_pos\titer\tkendalltau\tspearmanr\tnum_unranked\tmax_d\n")
 
             print("Running %s for %d goterms. Writing to %s" % (alg, self.ann_matrix.shape[0], out_file))
-            for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0]):
+            for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
                 goid = self.goids[i]
                 positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
                 # get the row corresponding to the current goids annotations 
@@ -506,7 +511,7 @@ class Alg_Runner:
 
         #for goterm in tqdm(goid_pos_neg):
         #    positives, negatives = goid_pos_neg[goterm]['pos'], goid_pos_neg[goterm]['neg']
-        for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0]):
+        for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
             goid = self.goids[i]
             positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
             print("%d positives, %d negatives for goterm %s" % (len(positives), len(negatives), goid))
@@ -592,7 +597,7 @@ class Alg_Runner:
         goid_num_pos = {} 
         goid_prec_rec = {}
         #curr_goid2idx = {g: i for i, g in enumerate(goids)}
-        for i in tqdm(range(true_ann_matrix.shape[0]), total=true_ann_matrix.shape[0]):
+        for i in range(true_ann_matrix.shape[0]):
             goid = self.goids[i]
             # make sure the scores are actually available first
             #if goid not in goid_scores:
@@ -615,7 +620,7 @@ class Alg_Runner:
             #positives = set(self.node2idx[n] for n in positives if n in self.node2idx)
             goid_num_pos[goid] = len(positives)
             if len(positives) == 0:
-                tqdm.write("%s has 0 positives after restricting to nodes in the network. Skipping" % (goid))
+                print("%s has 0 positives after restricting to nodes in the network. Skipping" % (goid))
                 continue
             if non_pos_as_neg_eval is True:
                 # leave everything not a positive as a negative
@@ -651,8 +656,9 @@ class Alg_Runner:
                     taxon, g, goid_fmax[g], goid_num_pos[g]) for g in goid_fmax]))
 
         if write_prec_rec:
-            out_file = "%sa%s-prec-rec%s.txt" % (
-                    out_pref, str(self.a_list[0]).replace('.', '_'), taxon)
+            out_file = "%sa%s-prec-rec%s%s.txt" % (
+                    out_pref, str(self.a_list[0]).replace('.', '_'), taxon,
+                '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
             print("writing prec/rec to %s" % (out_file))
             with open(out_file, 'w') as out:
                 out.write("goid\tprec\trec\tnode\tscore\tidx\n")
@@ -830,8 +836,8 @@ def parse_args(args):
     if opts.algorithm is None:
         opts.algorithm = ALGORITHMS
 
-    if version not in f_settings.ALLOWEDVERSIONS:
-        print("ERROR: '%s' not an allowed version. Options are: %s." % (version, ', '.join(f_settings.ALLOWEDVERSIONS)))
+    if opts.version not in f_settings.ALLOWEDVERSIONS:
+        print("ERROR: '%s' not an allowed version. Options are: %s." % (opts.version, ', '.join(f_settings.ALLOWEDVERSIONS)))
         sys.exit(1)
 
     #if opts.algorithm not in f_settings.ALGORITHM_OPTIONS:

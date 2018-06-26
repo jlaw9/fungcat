@@ -460,18 +460,19 @@ def select_nodes(mat, indices):
     mask[indices] = True
     return mat[mask, :][:, mask]
 
-## copied from here: https://stackoverflow.com/a/26504995
-#def delete_rows_csr(mat, indices):
-#    """
-#    Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.
-#    """
-#    if not isinstance(mat, scipy.sparse.csr_matrix):
-#        raise ValueError("works only for CSR format -- use .tocsr() first")
-#    indices = list(indices)
-#    mask = np.ones(mat.shape[0], dtype=bool)
-#    mask[indices] = False
-#    return mat[mask]
-#
+
+# copied from here: https://stackoverflow.com/a/26504995
+def delete_rows_csr(mat, indices):
+    """
+    Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.
+    """
+    if not isinstance(mat, sparse.csr_matrix):
+        raise ValueError("works only for CSR format -- use .tocsr() first")
+    indices = list(indices)
+    mask = np.ones(mat.shape[0], dtype=bool)
+    mask[indices] = False
+    return mat[mask]
+
 #def delete_cols_csc(mat, indices):
 #    """
 #    Remove the rows denoted by ``indices`` form the CSR sparse matrix ``mat``.

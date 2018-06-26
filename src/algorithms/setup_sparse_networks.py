@@ -9,17 +9,17 @@ from collections import defaultdict
 #import matlab.engine
 #from optparse import OptionParser
 sys.path.append('src')
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import utils.file_utils as utils
 import fungcat_settings as f_settings
 from string_split_to_species import full_column_names, \
     STRING_NETWORKS, NON_TRANSFERRED_STRING_NETWORKS, \
     CORE_STRING_NETWORKS
-import algorithms.gain_scipy.run_algs as run_algs
 import algorithms.gain_scipy.alg_utils as alg_utils
 #from findKernelWeights import findKernelWeights
 from algorithms.weight_networks.combineNetworksSWSN import combineNetworksSWSN
 import networkx as nx
-import pandas as pd
+#import pandas as pd
 import numpy as np
 from scipy.io import savemat, loadmat
 from scipy import sparse
@@ -392,7 +392,7 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
     #        "inputs/pos-neg/%s/pos-neg-%s-50-list.tsv" % (ev_codes, h),] 
     ##        "inputs/pos-neg/%s/pos-neg-mf-50-list.tsv" % (ev_codes),]
     ## TODO build the matrix while parsing the file
-    goid_pos, goid_neg = run_algs.parse_pos_neg_files(pos_neg_files, goterms=goterms) 
+    goid_pos, goid_neg = alg_utils.parse_pos_neg_files(pos_neg_files, goterms=goterms) 
     node2idx = {prot: i for i, prot in enumerate(prots)}
 
     # limit it to the current taxon
@@ -409,6 +409,7 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
             species_to_uniprot[uniprot_to_species[p]].add(p)
         if taxon not in species_to_uniprot:
             print("Error: taxon ID '%d' not found" % (taxon))
+            sys.exit()
         taxon_prots = species_to_uniprot[taxon]
         # also limit the proteins to those in the network
         print("\t%d prots for taxon %s. Limiting to the %d in the network" % (len(taxon_prots), taxon, len(node2idx)))
@@ -450,14 +451,11 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
             num_neg += 1
     print("\t%d annotations. %d positive, %d negatives" % (len(data), num_pos, num_neg))
 
-    # convert it to a sparse matrix and transpose it so it matches the GO DAG and G network (above)
+    # convert it to a sparse matrix 
     print("Building a sparse matrix of annotations")
     ann_matrix = sparse.coo_matrix((data, (i_list, j_list)), shape=(len(prots), len(goids)), dtype=float).tocsr()
     print("\t%d pos/neg annotations" % (len(ann_matrix.data)))
     ann_matrix = ann_matrix.transpose()
-    # just get the top 20 for now
-    #ann_matrix = ann_matrix[0:20]
-    #goids = goids[:20]
 
     return ann_matrix, goids
 
@@ -558,7 +556,7 @@ def run():
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
     print("%d GO terms from only_functions_file and/or specified GO terms" % (len(goterms)))
 
-    #goid_pos, goid_neg = parse_pos_neg_files(opts.pos_neg_file) 
+    #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(opts.pos_neg_file) 
 
     # setup the selection of string networks 
     if opts.string_networks:
