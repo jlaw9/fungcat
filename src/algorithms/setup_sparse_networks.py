@@ -554,7 +554,8 @@ def run():
     opts = parse_args(sys.argv)
     goterms = alg_utils.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
-    print("%d GO terms from only_functions_file and/or specified GO terms" % (0 if goterms is None else len(goterms)))
+    if goterms is not None:
+        print("%d GO terms from only_functions_file and/or specified GO terms" % (len(goterms)))
 
     #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(opts.pos_neg_file) 
 
