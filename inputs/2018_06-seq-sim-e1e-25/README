@@ -1,0 +1,2 @@
+# command used:
+sed -e "s/\w\w|\(\S\+\)|\S\+/\1/g" ../protein-similarity/2018_06/uniprot-19-strains-network-e0_1-lenNone.txt | awk '{if($3>=-log(1e-25)/log(10)){print $0}}' > 2018_06-seq-sim-e1e-25-net.txt
