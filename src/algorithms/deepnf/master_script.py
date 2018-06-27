@@ -263,12 +263,11 @@ def run():
                       " in total %s of go terms have been removed"
                       % (threshold_hi, len(del_grid)))
 
-    # reading network file
-    Nets = loadmat(opt.input_networks)["Networks"][0]
 
     if opt.prep:
         # go through deepNF preprocessing protocol
-        Nets = load_networks(Nets)
+        Nets = loadmat(opt.input_networks)["Networks"][0]
+	Nets = load_networks(Nets)
 
         # Compute RWR + PPMI
         for i in range(0, len(Nets)):
@@ -278,11 +277,13 @@ def run():
             Nets[i] = PPMI_matrix(Nets[i])
             # print("### Writing output to file...")
             # fWrite = open('%s%s_%s_K3_alpha%d.mat' % (opt.results_path, opt.prefix, i, opt.alpha), 'wb')
-            # savemat(fWrite, {'Networks': Nets[i]})
+            # savemat(fWrite, {'annotations': Nets[i]})
             # fWrite.close()
 
         savemat("%s%s_preprocessed_nets.mat" % (opt.results_path, opt.prefix),
                 {"Networks":Nets}, do_compression=True)
+    else:
+        Nets = list(loadmat(opt.input_networks)["Networks"])
     trainer = DeepNF(annot_file=annot, networks=Nets, goids=goterms, protids=prots, batch_size=opt.batch_size,
                      cv=opt.valid_type, epochs=opt.epochs, ntrials=opt.ntrials, arch=opt.select_arch, topK=opt.topK)
 
@@ -331,7 +332,7 @@ def run():
     measures = ['m-aupr_avg', 'm-aupr_std', 'M-aupr_avg', 'M-aupr_std',
                 'F1_avg', 'F1_std', 'acc_avg', 'acc_std']
 
-    fout = open("%s%s_performance_score.txt" % (opt.results_path, prefix), "w")
+    fout = open("%s%s_performance_score.txt" % (opt.results_path, opt.prefix), "w")
     fout.write("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" % ('m-aupr_avg', 'm-aupr_std', 'M-aupr_avg', 'M-aupr_std',
                 'F1_avg', 'F1_std', 'acc_avg', 'acc_std'))
     for m in measures:
