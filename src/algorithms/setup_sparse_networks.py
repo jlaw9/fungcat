@@ -296,7 +296,9 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
                 u,v = line[:2]
                 attr_dict = {}
                 for net in string_nets:
-                    attr_dict[net] = float(line[full_column_names[net]-1])
+                    w = float(line[full_column_names[net]-1])
+                    if w > 0:
+                        attr_dict[net] = w
                 # if the edge already exists, it will be added with
                 # the new attributes
                 G.add_edge(u,v,**attr_dict)
@@ -311,8 +313,13 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
     #sparse_networks = np.zeros(len(net_files)+len(string_net_files), dtype=np.object)
     sparse_networks = []
     for i, net in enumerate(tqdm(network_names)):
-        # default nodelist order is G.nodes()
-        sparse_matrix = nx.to_scipy_sparse_matrix(G, nodelist=sorted(idx2node), weight=net)
+        # all of the edges that don't have a weight for the specified network will be given a weight of 1
+        # get a subnetwork with the edges that have a weight for this network
+        print("\tgetting subnetwork for '%s'" % (net))
+        netG = nx.Graph()
+        netG.add_weighted_edges_from([(u,v,w) for u,v,w in G.edges(data=net) if w is not None])
+        # now convert it to a sparse matrix. The nodelist will make sure they're all the same dimensions
+        sparse_matrix = nx.to_scipy_sparse_matrix(netG, nodelist=sorted(idx2node))
         # convert to float otherwise matlab won't parse it correctly
         # see here: https://github.com/scipy/scipy/issues/5028
         sparse_matrix = sparse_matrix.astype(float) 
