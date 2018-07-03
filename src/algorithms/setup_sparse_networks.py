@@ -164,7 +164,7 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
 
 
 def create_sparse_net_file(
-        version, out_pref, selected_strains=None, taxon=None, string_nets=None,
+        version, out_pref, selected_strains=None, taxon=None, string_nets=[],
         string_cutoff=f_settings.STRING_CUTOFF, forcenet=False):
 
     net_files = []
@@ -567,6 +567,7 @@ def run():
     #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(opts.pos_neg_file) 
 
     # setup the selection of string networks 
+    string_networks = []
     if opts.string_networks:
         string_networks = opts.string_networks.split(',')
         for net in string_networks:
