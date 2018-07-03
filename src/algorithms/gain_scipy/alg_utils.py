@@ -188,7 +188,6 @@ def setup_sparse_network(network_file, node2idx_file=None, forced=False):
     return W, nodes
 
 
-#def normalizeGraphEdgeWeights(W):
 def normalizeGraphEdgeWeights(W, ss_lambda=None, axis=1):
     """
     *W*: weighted network as a scipy sparse matrix in csr format
@@ -204,30 +203,37 @@ def normalizeGraphEdgeWeights(W, ss_lambda=None, axis=1):
     return P
     # this gives a memory error likely because it first converts the matrix to a numpy matrix
     #return W / W.sum(axis=1)
-#def normalizeGraphEdgeWeights(W):
-#    """
-#    *W*: weighted network as a scipy sparse matrix in csr format
-#    """
-#    # normalizing the matrix
-#    # sum the weights in the row to get the degree of each node
-#    deg = np.asarray(W.sum(axis=1)).flatten()
-#    deg = np.divide(1., np.sqrt(deg))
-#    deg[np.isinf(deg)] = 0
-#    D = sparse.diags(deg).tocsr()
-#    # normalize W by multiplying D^(-1/2) * W * D^(-1/2)
-#    W = csr_matrix.dot(D, csr_matrix.dot(W, D))
-#    return W
+
+
+def _net_normalize(W, axis=0):
+    """
+    Normalize W by multiplying D^(-1/2) * W * D^(-1/2)
+    This is used for GeneMANIA
+    *W*: weighted network as a scipy sparse matrix in csr format
+    """
+    # normalizing the matrix
+    # sum the weights in the columns to get the degree of each node
+    deg = np.asarray(W.sum(axis=axis)).flatten()
+    deg = np.divide(1., np.sqrt(deg))
+    deg[np.isinf(deg)] = 0
+    D = sparse.diags(deg)
+    # normalize W by multiplying D^(-1/2) * W * D^(-1/2)
+    P = D.dot(W.dot(D))
+    return P
 
 
 def get_goid_pos_neg(ann_matrix, i):
+    """
+    The matrix should be lil format as others don't have the getrowview option
+    """
     # get the row corresponding to the current goids annotations 
-    goid_ann = ann_matrix[i,:].toarray().flatten()
-    positives = np.where(goid_ann > 0)[0]
-    negatives = np.where(goid_ann < 0)[0]
-    # may be faster
-    #goid_ann = ann_matrix[i]
-    #positives = (goid_ann > 0)[1]
-    #negatives = (goid_ann < 0)[1]
+    #goid_ann = ann_matrix[i,:].toarray().flatten()
+    #positives = np.where(goid_ann > 0)[0]
+    #negatives = np.where(goid_ann < 0)[0]
+    # may be faster with a lil matrix
+    goid_ann = ann_matrix.getrowview(i)
+    positives = (goid_ann > 0).nonzero()[1]
+    negatives = (goid_ann < 0).nonzero()[1]
     return positives, negatives
 
 

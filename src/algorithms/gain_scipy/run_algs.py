@@ -17,6 +17,7 @@ import fungcat_settings as f_settings
 import setup_sparse_networks as setup
 import alg_utils
 import sinksource
+import genemania
 #import sinksource_topk_ub
 import sinksource_ripple
 import sinksource_squeeze
@@ -25,6 +26,8 @@ from aptrank.birgrank import birgRank
 import networkx as nx
 from scipy import sparse
 import numpy as np
+from sklearn import metrics
+from sklearn.model_selection import KFold
 #import gc
 
 
@@ -40,6 +43,7 @@ ALGORITHMS = [
     "localplus",  # same as local-ovn, but with the option of using lambda and/or alpha
     "local",  # same as local-ova, but with the option of using lambda and/or alpha
     "birgrank",
+    "genemania",
     ]
 
 # These algorithms don't use any negative examples
@@ -71,7 +75,7 @@ class Alg_Runner:
         self.exp_name = exp_name
         #self.W = W
         self.prots = prots
-        self.ann_matrix = ann_matrix
+        self.ann_matrix = ann_matrix.tolil()
         self.goids = goids
         self.algorithms = algorithms
         self.unweighted = unweighted
@@ -106,6 +110,10 @@ class Alg_Runner:
             #and re-normalizing by dividing each edge by the node's degree")
             W = (W > 0).astype(int) 
         self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
+
+        if 'genemania' in self.algorithms:
+            print("\nCreating Laplacian matrix for GeneMANIA")
+            self.L = genemania.setup_laplacian(W)
 
         # used to map from node/prot to the index and vice versa
         #self.idx2node = {i: n for i, n in enumerate(prots)}
@@ -215,7 +223,7 @@ class Alg_Runner:
                 for i in range(Xh.shape[0]):
                     scores = Xh[i].toarray().flatten()
                     # convert the nodes back to their names, and make a dictionary out of the scores
-                    scores = {self.prots[i]:s for i, s in enumerate(scores)}
+                    scores = {self.prots[j]:s for j, s in enumerate(scores)}
                     self.write_scores_to_file(scores, goid=self.goids[i], file_handle=out,
                             num_pred_to_write=self.num_pred_to_write)
         return Xh
@@ -234,6 +242,10 @@ class Alg_Runner:
             goid_scores, params_results = self.run_topk_with_params(
                     alg, out_pref=out_pref)
                     #out_pref=out_pref, forced=forced)
+        elif alg in ["genemania"]:
+            out_file = "%sresults.txt" % (out_pref) if out_pref is not None else None
+            goid_scores, params_results = self.run_alg_on_goterms(alg,
+                    out_file=out_file)
 
         return goid_scores, params_results
 
@@ -338,15 +350,15 @@ class Alg_Runner:
                     tqdm.write("Skipping goterm %s. It has %d annotations which is < the minimum 10." % (goid, len(positives)))
                     continue
 
-                scores, curr_params_results, _ = self.run_alg(alg, positives, negatives, 
+                scores_arr, curr_params_results, _ = self.run_alg(alg, positives, negatives, 
                         a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid)
                 # storing all of the scores for each goterm takes a lot of memory
                 # rather than store the scores in a dictionary, store them in a sparse matrix
                 # split the dictionary into a list of indices and a list of scores
-                indices, score_list = zip(*scores.items()) 
-                # build an array of the scores and set it in the goid sparse matrix of scores
-                scores_arr = np.zeros(goid_scores.shape[1])
-                scores_arr[list(indices)] = list(score_list)
+                #indices, score_list = zip(*scores.items()) 
+                ## build an array of the scores and set it in the goid sparse matrix of scores
+                #scores_arr = np.zeros(goid_scores.shape[1])
+                #scores_arr[list(indices)] = list(score_list)
                 goid_scores[i] = scores_arr
                 params_results.update(curr_params_results)
 
@@ -364,7 +376,7 @@ class Alg_Runner:
 
                 if out_file is not None:
                     # convert the nodes back to their names, and make a dictionary out of the scores
-                    scores = {self.prots[n]:scores[n] for n in scores}
+                    scores = {self.prots[i]:s for i, s in enumerate(scores_arr)}
                     self.write_scores_to_file(scores, goid=goid, file_handle=file_handle,
                             num_pred_to_write=self.num_pred_to_write)
 
@@ -405,10 +417,16 @@ class Alg_Runner:
             scores, total_time, iters, comp = sinksource.runSinkSource(
                     self.P, positives, negatives=negatives, max_iters=self.max_iters, delta=eps, a=a)
             update_time = '-'
-        if alg in ['localplus', 'local']:
-            scores = sinksource.runLocal(
+        elif alg in ['localplus', 'local']:
+            scores, total_time = sinksource.runLocal(
                     self.P, positives, negatives=negatives)
-            update_time, total_time, iters, comp = [-1]*4
+            update_time, total_time, iters, comp = [-1, total_time, 1, -1]
+        elif alg == 'genemania':
+            y = np.zeros(self.P.shape[0])
+            y[positives] = 1
+            y[negatives] = -1
+            scores, total_time = genemania.runGeneMANIA(self.L, y)
+            update_time, iters, comp = [-1, -1, -1]
         elif alg in ['sinksourceplus-squeeze', 'sinksource-squeeze']:
             ss_obj = sinksource_squeeze.SinkSourceSqueeze(
                     self.P, positives, negatives=negatives, k=k, a=a, epsUB=epsUB, verbose=self.verbose,
@@ -480,9 +498,6 @@ class Alg_Runner:
         return
 
     def run_cross_validation(self, alg, folds=5, out_pref=None):
-        from sklearn.model_selection import KFold
-        #from sklearn import metrics
-
         # compare how long it takes to run each from scratch vs using the previous run's scores
         params_results = {}
         #overall_time_normal = 0
@@ -589,11 +604,11 @@ class Alg_Runner:
     def evaluate_ground_truth(
             self, goid_scores, goids, true_ann_matrix, out_pref,
             non_pos_as_neg_eval=False, taxon='-',
-            write_prec_rec=False):
+            alg='', write_prec_rec=False):
 
         score_goids2idx = {g: i for i, g in enumerate(goids)}
         print("Computing fmax from ground truth of %d goterms" % (true_ann_matrix.shape[0]))
-        goid_fmax = {}
+        goid_stats = {}
         goid_num_pos = {} 
         goid_prec_rec = {}
         #curr_goid2idx = {g: i for i, g in enumerate(goids)}
@@ -631,48 +646,63 @@ class Alg_Runner:
                 if len(negatives) == 0:
                     print("WARNING: 0 negatives for %s - %s. Skipping" % (goid, taxon))
                     continue
-            prec, recall, fpr, pos_stats = self.compute_eval_measures(scores, positives, negatives=negatives, track_pos=True)
+            prec, recall, fpr, pos_neg_stats = self.compute_eval_measures(scores, positives, negatives=negatives, track_pos_neg=True)
+            # TODO only write the prec and rec and the points that change in recall(?)
             # TODO also write the prec, recall
             if write_prec_rec:
-                goid_prec_rec[goid] = (prec, recall, pos_stats)
+                goid_prec_rec[goid] = (prec, recall, pos_neg_stats)
             #print((len(scores), len(positives), len(prec), len(recall)))
             fmax = self.compute_fmax(prec, recall)
-            goid_fmax[goid] = fmax 
+            avgp = self.compute_avgp(prec, recall)
+            if len(prec) == 1:
+                auprc = 0
+                auroc = 0
+            else:
+                auprc = self.compute_auprc(prec, recall)
+                auroc = self.compute_auroc([r for r, f in fpr], [f for r, f in fpr])
+            goid_stats[goid] = (fmax, avgp, auprc, auroc)
             if self.verbose:
                 print("%s fmax: %0.4f" % (goid, fmax))
 
         if not write_prec_rec:
+            # TODO
+            #out_file = "%s.txt" % (out_pref)
+            #if alg in ['sinksource', 'sinksourceplus']:
             out_file = "%sa%s.txt" % (
                     out_pref, str(self.a_list[0]).replace('.', '_'))
             # don't write the header each time
             if not os.path.isfile(out_file):
                 print("Writing results to %s" % (out_file))
                 with open(out_file, 'w') as out:
-                    out.write("#taxon\tgoid\tfmax\t# ann\n")
+                    out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
             else:
                 print("Appending results to %s" % (out_file))
             with open(out_file, 'a') as out:
-                out.write(''.join(["%s\t%s\t%0.4f\t%d\n" % (
-                    taxon, g, goid_fmax[g], goid_num_pos[g]) for g in goid_fmax]))
+                out.write(''.join(["%s\t%s\t%0.4f\t%0.4f\t%0.4f\t%0.4f\t%d\n" % (
+                    taxon, g, fmax, avgp, auprc, auroc, goid_num_pos[g]
+                    ) for g, (fmax, avgp, auprc, auroc) in goid_stats.items()]))
 
         if write_prec_rec:
-            out_file = "%sa%s-prec-rec%s%s.txt" % (
+            out_file = "%sprec-rec%s%s.txt" % (
+                out_pref, taxon, '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
+            if alg in ['sinksource', 'sinksourceplus']:
+                out_file = "%sa%s-prec-rec%s%s.txt" % (
                     out_pref, str(self.a_list[0]).replace('.', '_'), taxon,
-                '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
+                    '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
             print("writing prec/rec to %s" % (out_file))
             with open(out_file, 'w') as out:
-                out.write("goid\tprec\trec\tnode\tscore\tidx\n")
-                for goid, (prec, rec, pos_stats) in goid_prec_rec.items():
-                    out.write(''.join(["%s\t%0.4f\t%0.4f\t%s\t%0.4f\t%d\n" % (
-                        goid, p, r, self.prots[n], s, idx) for p,r,(n,s,idx) in zip(prec, rec, pos_stats)]))
+                out.write("goid\tprec\trec\tnode\tscore\tidxpos/neg\n")
+                for goid, (prec, rec, pos_neg_stats) in goid_prec_rec.items():
+                    out.write(''.join(["%s\t%0.4f\t%0.4f\t%s\t%0.4f\t%d\t%d\n" % (
+                        goid, p, r, self.prots[n], s, idx, pos_neg) for p,r,(n,s,idx,pos_neg) in zip(prec[1:], rec[1:], pos_neg_stats)]))
 
-    def compute_eval_measures(self, scores, positives, negatives=None, track_pos=False):
+    def compute_eval_measures(self, scores, positives, negatives=None, track_pos_neg=False):
         """
         Compute the precision and false-positive rate at each change in recall (true-positive rate)
         *scores*: dictionary containing a score for each node
         *negatives*: if negatives are given, then the FP will only be from the set of negatives given
-        *track_pos*: if specified, track which positives are at each change in recall, 
-            and return a tuple of the positives in order of their score, their score, and their idx
+        *track_pos_neg*: if specified, track the score and rank of the positive and negative nodes,
+            and return a tuple of the node ids in order of their score, their score, their idx, and 1/-1 for pos/neg
         """
         #f1_score = metrics.f1score(positives, 
         #num_unknowns = len(scores) - len(positives) 
@@ -691,27 +721,32 @@ class Alg_Runner:
         #print("%d positives, %d pos_ranks" % (len(positives), len(pos_ranks)))
         #print(pos_ranks)
         #print([scores[s] for s in nodes_sorted_by_scores[:pos_ranks[0]+1]])
-        precision = []
-        recall = []
+        precision = [1]
+        recall = [0]
         fpr = []
-        pos_stats = []  # tuple containing the node, score and idx
+        pos_neg_stats = []  # tuple containing the node, score and idx
         # TP is the # of correctly predicted positives so far
         TP = 0
         FP = 0
+        rec = 0
         for i, n in enumerate(nodes_sorted_by_scores):
             # TODO this could be slow if there are many positives
             if n in positives:
                 TP += 1
                 # precisions is the # of true positives / # true positives + # of false positives (or the total # of predictions)
-                precision.append((TP / float(TP + FP)))
+                precision.append(TP / float(TP + FP))
                 # recall is the # of recovered positives TP / TP + FN (total # of positives)
-                recall.append((TP / float(len(positives))))
+                rec = TP / float(len(positives))
+                recall.append(rec)
                 # fpr is the FP / FP + TN
-                fpr.append(FP / float(len(negatives)))
-                if track_pos:
-                    pos_stats.append((n, scores[n], i)) 
+                fpr.append((rec, FP / float(len(negatives))))
+                if track_pos_neg:
+                    pos_neg_stats.append((n, scores[n], i, 1)) 
             elif check_negatives is False or n in negatives:
                 FP += 1
+                fpr.append((rec, FP / float(len(negatives))))
+            #else:
+            #    continue
 
         # TODO how should I handle this case?
         if len(precision) == 0:
@@ -720,8 +755,8 @@ class Alg_Runner:
 
         #print(precision[0], recall[0], fpr[0])
 
-        if track_pos:
-            return precision, recall, fpr, pos_stats
+        if track_pos_neg:
+            return precision, recall, fpr, pos_neg_stats
         else:
             return precision, recall, fpr
      
@@ -729,9 +764,32 @@ class Alg_Runner:
         f_measures = []
         for i in range(len(prec)):
             p, r = prec[i], rec[i]
-            harmonic_mean = (2*p*r)/(p+r)
+            if p+r == 0:
+                harmonic_mean = 0
+            else:
+                harmonic_mean = (2*p*r)/(p+r)
             f_measures.append(harmonic_mean)
         return max(f_measures)
+
+    def compute_avgp(self, prec, rec):
+        # average precision score
+        # see http://scikit-learn.org/stable/modules/generated/sklearn.metrics.average_precision_score.html#sklearn.metrics.average_precision_score
+        avgp = 0
+        prev_r = 0 
+        for p,r in zip(prec, rec):
+            recall_change = r - prev_r
+            avgp += (recall_change*p)
+            prev_r = r
+        #avgp = avgp / float(len(alg_prec_rec))
+        return avgp
+
+    def compute_auprc(self, prec, rec):
+        auprc = metrics.auc(rec, prec)
+        return auprc
+
+    def compute_auroc(self, tpr, fpr):
+        auroc = metrics.auc(fpr, tpr)
+        return auroc
 
 
 def params_results_to_table(params_results):
@@ -891,21 +949,21 @@ def run():
         forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
     alg_runner.main()
 
-    ground_truth_pos = None 
-    if opts.ground_truth_file is not None:
-        print("Ground truth evaluation not yet implemented. Quitting")
-        sys.exit()
-        # TODO implement incorporating negatives
-        ground_truth_pos, ground_truth_neg = alg_utils.parse_pos_neg_file(opts.ground_truth_file)
-        #for goid, prot in utils.readColumns(self.ground_truth_file, 1, 2):
-
-#    # TODO also setup the ground truth
+#    ground_truth_pos = None 
 #    if opts.ground_truth_file is not None:
-#        out_pref = "%s/ground-truth-%sl%d-" % (out_dir, 
-#                'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
-#        self.evaluate_ground_truth(goid_scores, true_ann_matrix, goids, out_pref,
-#                                    non_pos_as_neg_eval=False, taxon=ground_truth_taxon,
-#                                    write_prec_rec=write_prec_rec)
+#        print("Ground truth evaluation not yet implemented. Quitting")
+#        sys.exit()
+#        # TODO implement incorporating negatives
+#        ground_truth_pos, ground_truth_neg = alg_utils.parse_pos_neg_file(opts.ground_truth_file)
+#        #for goid, prot in utils.readColumns(self.ground_truth_file, 1, 2):
+#
+##    # TODO also setup the ground truth
+##    if opts.ground_truth_file is not None:
+##        out_pref = "%s/ground-truth-%sl%d-" % (out_dir, 
+##                'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
+##        self.evaluate_ground_truth(goid_scores, true_ann_matrix, goids, out_pref,
+##                                    non_pos_as_neg_eval=False, taxon=ground_truth_taxon,
+##                                    write_prec_rec=write_prec_rec)
 
 
 if __name__ == "__main__":

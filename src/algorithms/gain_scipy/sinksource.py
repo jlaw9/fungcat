@@ -62,6 +62,7 @@ def runSinkSource(P, positives, negatives=None, max_iters=1000, delta=0.0001, a=
         If 0, use spsolve to solve the equation directly 
     *k*: Run with upper and lower bounds to prune unnecessary nodes
     """
+    num_nodes = P.shape[0]
     # TODO this should be done once before all predictions are being made
     # check to make sure the graph is normalized because making a copy can take a long time
     #G = alg_utils.normalizeGraphEdgeWeights(G)
@@ -70,18 +71,22 @@ def runSinkSource(P, positives, negatives=None, max_iters=1000, delta=0.0001, a=
     if max_iters > 0:
         s, total_time, iters, comp = SinkSource_scipy(P, f, max_iters=max_iters, delta=delta, a=a, scores=scores)
     else:
-        start_time = time.time()
+        start_time = time.process_time()
         # try solving for s directly
         A = eye(P.shape[0]) - a*P
         s = spsolve(A, f)
-        total_time = time.time() - start_time
+        total_time = time.process_time() - start_time
         print("Solved SS using sparse linear system (%0.2f sec)" % (total_time))
         iters = 0
         comp = 0
 
-    s = {idx2node[n]:s[n] for n in range(len(s))}
+    # map back from the indices after deleting pos/neg to the original indices
+    #s = {idx2node[n]:s[n] for n in range(len(s))}
+    scores_arr = np.zeros(num_nodes)
+    indices = [idx2node[n] for n in range(len(s))]
+    scores_arr[indices] = s
 
-    return s, total_time, iters, comp
+    return scores_arr, total_time, iters, comp
 
 
 def runLocal(P, positives, negatives=None):
@@ -92,8 +97,10 @@ def runLocal(P, positives, negatives=None):
         unknowns = unknowns - set(list(negatives))
         f[negatives] = -1
 
+    start_time = time.process_time()
     s = csr_matrix.dot(P, f)
+    total_time = time.process_time() - start_time
 
-    s = {n: s[n] for n in unknowns}
+    #s = {n: s[n] for n in unknowns}
 
-    return s
+    return s, total_time
