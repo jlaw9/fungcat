@@ -22,7 +22,7 @@ SEQ_SIM_NETWORKS = {
     }
 # I already built these using a little bash script in each version's directory
 for cutoff in ["1e-50", "1e-25", "1e-15","1e-10", "1e-6", "1e-4", "0_1"]:
-    SEQ_SIM_NETWORKS["2018_06-seq-sim-e%s"%cutoff] = "inputs/2018_06-seq-sim-e%s/2018_06-seq-sim-e%s-net.txt" % (cutoff, cutoff),
+    SEQ_SIM_NETWORKS["2018_06-seq-sim-e%s"%cutoff] = "inputs/2018_06-seq-sim-e%s/2018_06-seq-sim-e%s-net.txt" % (cutoff, cutoff)
 
 NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim": ['SEQ_SIM'],
