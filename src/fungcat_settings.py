@@ -17,19 +17,12 @@ SEQ_SIM_NETWORKS = {
     "2017_10-seq-sim-x5-string-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-x5-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
     "2017_10-seq-sim-string-swsn": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    # I already built them using a little bash script in each version's directory
-#    "2018_06-seq-sim-e1e-50": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-50.txt",
-#    "2018_06-seq-sim-e1e-25": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-25.txt",
-#    "2018_06-seq-sim-e1e-10": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-10.txt",
-#    "2018_06-seq-sim-e1e-6": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-6.txt",
-#    "2018_06-seq-sim-e1e-4": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e1e-4.txt",
-#    "2018_06-seq-sim-e0_01": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e0_01.txt",
-#    "2018_06-seq-sim-e0_1": "inputs/protein-similarity/blast/2018-06-13-similarity-network-e0_1.txt",
     "2018_06-seq-sim-e1e-25-string": "inputs/2018_06-seq-sim-e1e-25/2018_06-seq-sim-e1e-25-net.txt",
     "2018_06-seq-sim-e0_1-string": "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
-    # TODO
-    #"2018_02-seq-sim": "TODO",
     }
+# I already built these using a little bash script in each version's directory
+for cutoff in ["1e-50", "1e-25", "1e-15","1e-10", "1e-6", "1e-4", "0_1"]:
+    SEQ_SIM_NETWORKS["2018_06-seq-sim-e%s"%cutoff] = "inputs/2018_06-seq-sim-e%s/2018_06-seq-sim-e%s-net.txt" % (cutoff, cutoff),
 
 NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim": ['SEQ_SIM'],
@@ -40,9 +33,9 @@ NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim-string-swsn": ['SEQ_SIM', 'STRING'],
     "2017_10-string": ['STRING'],
     "2017_10-string-14": ['STRING'],
-    #"2018_02-seq-sim": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-50": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-25": ['SEQ_SIM'],
+    "2018_06-seq-sim-e1e-15": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-10": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-6": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-4": ['SEQ_SIM'],
