@@ -13,6 +13,7 @@ import time
 
 __author__ = "Jeff Law"
 
+# python implementation of the BirgRank algorithm 
 # see https://github.rcac.purdue.edu/mgribsko/aptrank for the original matlab implementation
 # full citation:
 #Jiang, B., Kloster, K., Gleich, D. F., & Gribskov, M., Aptrank: an adaptive pagerank model for protein function prediction on bi-relational graphs, Bioinformatics, 33(12), 1829-1836 (2017).  http://dx.doi.org/10.1093/bioinformatics/btx029
@@ -47,8 +48,8 @@ def birgRank(G, Rtrain, dH, alpha=.5, theta=.5, mu=.5):
     # [G  0]
     # [RT H]
     P = vstack([hstack([mu*G, csc_matrix((m,n))]), hstack([(1-mu)*Rtrain.T, dH])]).tocsc()
-    # TODO normalize using the same normalization as AptRank
-    P = alg_utils.normalizeGraphEdgeWeights(P, axis=0)  # row normalization
+    # normalize using the same normalization as AptRank
+    P = alg_utils.normalizeGraphEdgeWeights(P, axis=0)  # column normalization
     A = eye(m+n) - alpha*P
 
     print("Starting solver")

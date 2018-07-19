@@ -14,7 +14,6 @@ import fungcat_settings as f_settings
 import run_algs
 import alg_utils
 import algorithms.setup_sparse_networks as setup
-import igacat.go_term_prediction_examples.go_term_prediction_examples as go_examples
 import algorithms.aptrank.run_birgrank as run_birgrank
 from scipy import sparse
 import numpy as np
@@ -172,7 +171,7 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
 
     # TODO make this more streamlined
     if 'birgrank' in algorithms:
-        dag_matrix, pos_matrix, dag_goids = setup_h_ann_matrices(
+        dag_matrix, pos_matrix, dag_goids = alg_utils.setup_h_ann_matrices(
                 prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
     if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
         sparse_networks, net_names = W
@@ -300,18 +299,7 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
                 print("Loading SWSN weighted network from %s" % (out_file))
                 W = sparse.load_npz(out_file)
             else:
-                # remove rows with 0 annotations
-                empty_rows = []
-                for i in range(len(goids)):
-                    pos, neg = alg_utils.get_goid_pos_neg(train_ann_mat, i)
-                    # the combineWeightsSWSN method doesn't seem to
-                    # work if there's only 1 positive
-                    if len(pos) <= 1 or len(neg) <= 1:
-                        empty_rows.append(i)
-                # don't modify the original to keep the rows matching the GO ids
-                curr_train_ann_mat = alg_utils.delete_rows_csr(train_ann_mat.tocsr(), empty_rows)
-                utils.checkDir(os.path.dirname(out_file))
-                W = setup.weight_SWSN(curr_train_ann_mat, sparse_networks,
+                W = setup.weight_SWSN(train_ann_mat, sparse_networks,
                         net_names=net_names, out_file=out_file, nodes=prots)
 
         if len(sp_goterms) == 0:
@@ -350,15 +338,18 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
             else:
                 curr_goids = goids.copy()
                 goid_scores = alg_runner.main()
+
+            # now evaluate 
+            out_dir = "outputs/%s/all/%s/%s/" % (version, alg, exp_name)
+
             # this will write an file containing the fmax for each goterm 
             # with the taxon name in the name of the file
             write_prec_rec = False 
             if len(taxons) == 1:
                 print("Also writing prec/rec stats")
                 write_prec_rec = True 
+                out_dir += "goids/"
 
-            # now evaluate 
-            out_dir = "outputs/%s/all/%s/%s/goids/" % (version, alg, exp_name)
             utils.checkDir(out_dir)
             out_pref = "%s/ground-truth-%sl%d-" % (
                 out_dir, 'unw-' if opts.unweighted else '',
@@ -371,38 +362,6 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
                 goid_scores, curr_goids, test_ann_mat, out_pref,
                 #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
                 taxon=s, write_prec_rec=write_prec_rec)
-
-
-def setup_h_ann_matrices(prots, obo_file, pos_neg_files, goterms=None):
-    # parse the go_dags first as it also sets up the goid_to_category dictionary
-    # TODO store the go dags as a file 
-    go_dags = go_examples.parse_obo_file_and_build_dags(obo_file)
-
-    # combine the matrices from bp and mf
-    # would it make a difference running them together vs separately? I guess potentially it could
-    # especially if I included part_of edges
-    # TODO the hstack doesn't actually work yet
-    dag_matrix = sparse.csr_matrix((0,0))
-    ann_matrix = sparse.csr_matrix((0,0))
-    goids = []
-    # TODO build a matrix with the direct annotations (i.e., from the gaf file)
-        # propagate the predictions(?)
-    # for now, just use all of the propagated annotations
-    # and then evaluate using the scores
-    for pos_neg_file in pos_neg_files:
-        if 'bp' in pos_neg_file:
-            h = 'bp'
-        elif 'mf' in pos_neg_file:
-            h = 'mf'
-        elif 'cc' in pos_neg_file:
-            h = 'cc'
-        curr_dag_matrix, curr_ann_matrix, curr_goids = run_birgrank.build_h_ann_matrices(
-            prots, go_dags, pos_neg_files=[pos_neg_file], h=h, goterms=goterms)
-        dag_matrix = sparse.hstack([dag_matrix,curr_dag_matrix])
-        ann_matrix = sparse.hstack([ann_matrix,curr_ann_matrix])
-        goids += curr_goids
-
-    return dag_matrix, ann_matrix, goids
 
 
 def run():

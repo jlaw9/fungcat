@@ -22,6 +22,7 @@ import genemania
 import sinksource_ripple
 import sinksource_squeeze
 from aptrank.birgrank import birgRank
+import aptrank.run_birgrank as run_birgrank
 #import pandas as pd
 import networkx as nx
 from scipy import sparse
@@ -61,15 +62,18 @@ class Alg_Runner:
     def __init__(
             self, version, exp_name,
             W, prots, ann_matrix, goids,
-            algorithms=["sinksource"], unweighted=False, ss_lambda=None, eps_list=[0.0001], 
+            algorithms=["sinksource"], weight_swsn=False,
+            unweighted=False, ss_lambda=None, eps_list=[0.0001], 
             k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
             deltaUBLB_list=[None], epsUB_list=[0], max_iters=1000,
             rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
             taxon=None, num_pred_to_write=100, 
+            aptrank_data=None, theta=.5, mu=.5,
             only_cv=False, cross_validation_folds=None, 
             forcenet=False, forcealg=False, verbose=False, progress_bar=True):
         """
         *eps*: Convergence cutoff for sinksource and sinksourceplus
+        *aptrank_data*: tuple containing the dag_matrix, annotation matrix, and the goids of the hierarchy.
         """
         self.version = version
         self.exp_name = exp_name
@@ -77,7 +81,11 @@ class Alg_Runner:
         self.prots = prots
         self.ann_matrix = ann_matrix.tolil()
         self.goids = goids
+        if aptrank_data is not None:
+            self.dag_matrix, self.pos_matrix, self.dag_goids = aptrank_data
+        self.theta, self.mu = theta, mu
         self.algorithms = algorithms
+        self.weight_swsn = weight_swsn
         self.unweighted = unweighted
         self.ss_lambda = ss_lambda
         # parameters for algorithms
@@ -105,15 +113,23 @@ class Alg_Runner:
         # option to display progress bar while iterating over GO terms
         self.progress_bar = progress_bar
 
-        if self.unweighted is True:
-            print("\tsetting all edge weights to 1 (unweighted)")
-            #and re-normalizing by dividing each edge by the node's degree")
-            W = (W > 0).astype(int) 
-        self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
+        if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
+            print("\tkeeping individual STRING networks to be weighted later")
+            self.sparse_networks, self.net_names = W
+            print("\tnormalizing the networks")
+            self.normalized_nets = []
+            for net in self.sparse_networks:
+                self.normalized_nets.append(setup._net_normalize(net))
+        else:
+            if self.unweighted is True:
+                print("\tsetting all edge weights to 1 (unweighted)")
+                #and re-normalizing by dividing each edge by the node's degree")
+                W = (W > 0).astype(int) 
+            self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
 
-        if 'genemania' in self.algorithms:
-            print("\nCreating Laplacian matrix for GeneMANIA")
-            self.L = genemania.setup_laplacian(W)
+            if 'genemania' in self.algorithms:
+                print("\nCreating Laplacian matrix for GeneMANIA")
+                self.L = genemania.setup_laplacian(W)
 
         # used to map from node/prot to the index and vice versa
         #self.idx2node = {i: n for i, n in enumerate(prots)}
@@ -131,16 +147,20 @@ class Alg_Runner:
         #if self.taxon is not None:
         #    network_file = f_settings.STRING_TAXON_UNIPROT % (self.taxon, self.taxon, f_settings.STRING_CUTOFF)
         #    gain_file = f_settings.FUN_FILE % (self.taxon, self.taxon)
-
         # organize the results by algorithm, then algorithm parameters, then GO term
-        params_results = {}
+        #params_results = {}
         for alg in self.algorithms:
             self.out_dir = "%s/all/%s/%s" % (self.RESULTSPREFIX, alg, self.exp_name)
             utils.checkDir(self.out_dir)
 
+            # TODO add an option to run birgrank in prediction mode
+            if alg == 'birgrank' and self.only_cv is False:
+                continue
+
             out_pref = "%s/pred-%s%s" % (
                 self.out_dir, 'unw-' if self.unweighted else '',
                 'l'+str(self.ss_lambda).replace('.', '_')+'-' if self.ss_lambda is not None else '')
+            # "prediction mode" is run if the user doesn't specify --only-cv
             if self.only_cv is False:
                 if self.num_pred_to_write == 0:
                     out_pref = None
@@ -152,39 +172,156 @@ class Alg_Runner:
                 goid_scores, curr_params_results = self.run_alg_with_params(
                         alg, out_pref=out_pref)
 
-                params_results.update(curr_params_results)
+                #params_results.update(curr_params_results)
 
+            # "cross validation mode" is run if the user specifies --cross-validation-folds X
             if self.cross_validation_folds is not None:
-                out_pref = "%s/cv-%dfolds-%sl%d-" % (self.out_dir, self.cross_validation_folds,
+                if self.weight_swsn is True or alg == "birgrank":
+                    self.run_cv_all_goterms(alg, folds=5)
+                else:
+                    out_pref = "%s/cv-%dfolds-%sl%d-" % (self.out_dir, self.cross_validation_folds,
                         'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
-                cv_params_results = self.run_cross_validation(alg,
-                        folds=self.cross_validation_folds, out_pref=out_pref)
-                params_results.update(cv_params_results)
+                    cv_params_results = self.run_goterm_cv(alg,
+                            folds=self.cross_validation_folds, out_pref=out_pref)
+                    #params_results.update(cv_params_results)
 
-            if self.verbose:
-                print(params_results_to_table(params_results))
+            #if self.verbose:
+            #    print(params_results_to_table(params_results))
 
         #version_params_results[version] = params_results
 
-        #for version in self.versions:
-        table = params_results_to_table(params_results)
-        if self.verbose:
-            print(self.version)
-            print(table)
-        out_dir = "outputs/viz/params-results"
-        utils.checkDir(out_dir)
-        out_file = "%s/%s-%s-params-results.tsv" % (out_dir, self.exp_name, self.version)
-        if self.forcealg is True or not os.path.isfile(out_file):
-            print("Writing params-results to: %s" % (out_file))
-            with open(out_file, 'w') as out:
-                out.write(table)
-        else:
-            print("%s already exists. Use --forcealg to overwrite it" % (out_file))
+        # I implemented this for Ripple and Squeeze
+        # TODO move this somewhere else
+#        #for version in self.versions:
+#        table = params_results_to_table(params_results)
+#        if self.verbose:
+#            print(self.version)
+#            print(table)
+#        out_dir = "outputs/viz/params-results"
+#        utils.checkDir(out_dir)
+#        out_file = "%s/%s-%s-params-results.tsv" % (out_dir, self.exp_name, self.version)
+#        if self.forcealg is True or not os.path.isfile(out_file):
+#            print("Writing params-results to: %s" % (out_file))
+#            with open(out_file, 'w') as out:
+#                out.write(table)
+#        else:
+#            print("%s already exists. Use --forcealg to overwrite it" % (out_file))
 
         if self.only_cv is False:
             return goid_scores
         else:
             return
+
+    def run_cv_all_goterms(self, alg, folds=5):
+        """
+        Split the positives and negatives into folds across all GO terms
+        and then run the algorithms on those folds.
+        For now, only setup to run BirgRank. TODO allow running each algorithm on the same split of data. 
+        """
+        # because each fold contains a different set of positives, and combined they contain all positives,
+        # store all of the prediction scores from each fold in a matrix
+        combined_fold_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+        orig_ann_matrix = self.ann_matrix
+        out_pref = "%s/cv-%dfolds-all-goids-%sl%d-" % (self.out_dir, self.cross_validation_folds,
+                'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
+        if alg == 'birgrank':
+            alpha, theta, mu = self.a_list[0], self.theta, self.mu
+            out_pref += 'a%s-t%s-m%s' % (
+                str(alpha).replace('.','_'), str(theta).replace('.','_'),
+                str(mu).replace('.','_'))
+            dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
+        utils.checkDir(os.path.dirname(out_pref))
+
+        ann_matrix_folds = self.split_cv_all_goterms(folds=folds)
+        for curr_fold, (train_ann_mat, test_ann_mat) in enumerate(ann_matrix_folds):
+            print("*  "*20)
+            print("Fold %d" % (curr_fold+1))
+
+            # weight the network if needed
+            if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
+                W = setup.weight_SWSN(train_ann_mat, self.sparse_networks,
+                        net_names=self.net_names, nodes=self.prots)
+                self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
+                if alg == 'genemania':
+                    self.L = genemania.setup_laplacian(W)
+
+            # run each algorithm on these folds
+            if alg == 'birgrank':
+                # TODO the matrix for BirgRank and the train_matrix do not have the same goids. 
+                # I need to build a pos_mat with the train_matrix annotations
+                train_pos_mat = sparse.lil_matrix(self.pos_matrix.shape)
+                # the birgrank/aptrank annotation (positive) matrix has a different # GO terms,
+                # but the same node columns. So I just need to align the rows
+                for i in range(len(self.goids)):
+                    dag_goid_idx = dag_goids2idx[self.goids[i]]
+                    train_pos_mat[dag_goid_idx] = train_ann_mat[i]
+                # now set the negatives to 0 as birgrank doesn't use negatives
+                train_pos_mat[train_pos_mat < 0] = 0
+
+                # the W matrix is already normalized, so I can run
+                # birgrank/aptrank from here
+                goid_scores = self.run_aptrank_with_params(
+                    train_pos_mat, self.dag_matrix, alg=alg, alpha=alpha,
+                    theta=theta, mu=mu) 
+            else:
+                # change the annotation matrix to the current fold
+                self.ann_matrix = train_ann_mat
+                goid_scores, _ = self.run_alg_with_params(alg)
+
+            # store only the scores of the test (left out) positives and negatives
+            for i in range(len(self.goids)):
+                test_pos, test_neg = alg_utils.get_goid_pos_neg(test_ann_mat, i)
+                curr_goid_scores = goid_scores[i].toarray().flatten()
+                curr_comb_scores = combined_fold_scores[i].toarray().flatten()
+                curr_comb_scores[test_pos] = curr_goid_scores[test_pos]
+                curr_comb_scores[test_neg] = curr_goid_scores[test_neg]
+                combined_fold_scores[i] = curr_comb_scores 
+
+        curr_goids = self.dag_goids if alg == 'birgrank' else self.goids
+        # now evaluate the results and write to a file
+        self.evaluate_ground_truth(
+            combined_fold_scores, curr_goids, orig_ann_matrix, out_pref,
+            #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
+            alg=alg)
+
+    def split_cv_all_goterms(self, folds=5):
+        """
+        Split the positives and negatives into folds across all GO terms
+        Required for running CV with birgrank/aptrank
+        *returns*: a list of tuples containing the (train pos, train neg, test pos, test neg)
+        """
+        print("Splitting all annotations into %d folds by splitting each GO terms annotations into folds, and then combining them" % (folds))
+        # TODO there must be a better way to do this than getting the folds in each go term separately
+        # list of tuples containing the (train pos, train neg, test pos, test neg) 
+        ann_matrix_folds = []
+        for i in range(folds):
+            train_ann_mat = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+            test_ann_mat = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+            ann_matrix_folds.append((train_ann_mat, test_ann_mat))
+
+        for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
+            goid = self.goids[i]
+            positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
+            #print("%d positives, %d negatives for goterm %s" % (len(positives), len(negatives), goid))
+            kf = KFold(n_splits=folds, shuffle=True)
+            kf_neg = KFold(n_splits=folds, shuffle=True)
+            kf.get_n_splits(positives)
+            kf_neg.get_n_splits(negatives)
+            fold = 0
+
+            for (pos_train_idx, pos_test_idx), (neg_train_idx, neg_test_idx) in zip(kf.split(positives), kf_neg.split(negatives)):
+                train_pos, test_pos= positives[pos_train_idx], positives[pos_test_idx]
+                train_neg, test_neg = negatives[neg_train_idx], negatives[neg_test_idx]
+                train_ann_mat, test_ann_mat = ann_matrix_folds[fold]
+                fold += 1
+                # build an array of the scores and set it in the goid sparse matrix of scores
+                for pos, neg, mat in [(train_pos, train_neg, train_ann_mat), (test_pos, test_neg, test_ann_mat)]:
+                    pos_neg_arr = np.zeros(len(self.prots))
+                    pos_neg_arr[list(pos)] = 1
+                    pos_neg_arr[list(neg)] = -1
+                    mat[i] = pos_neg_arr
+
+        return ann_matrix_folds
 
     def run_aptrank_with_params(self, pos_mat, hierarchy_mat, alg='birgrank',
                                 alpha=.5, theta=.5, mu=.5, out_pref=None):
@@ -497,7 +634,11 @@ class Alg_Runner:
             file_handle.write("%s\t%s\t%s\n" % (goid, n, str(scores[n])))
         return
 
-    def run_cross_validation(self, alg, folds=5, out_pref=None):
+    def run_goterm_cv(self, alg, folds=5, out_pref=None):
+        """
+        For every GO term, split the positives and negatives into the specified number of folds 
+            and run and evaluate the given algorithm
+        """
         # compare how long it takes to run each from scratch vs using the previous run's scores
         params_results = {}
         #overall_time_normal = 0
@@ -538,7 +679,10 @@ class Alg_Runner:
             # because each fold contains a different set of positives, and combined they contain all positives,
             # store all of the prediction scores from each fold in a list
             combined_fold_scores = {}
-            unknowns = set(range(self.P.shape[0])) - set(positives) 
+            if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
+                unknowns = set(range(self.normalized_nets[0].shape[0])) - set(positives) 
+            else:
+                unknowns = set(range(self.P.shape[0])) - set(positives) 
             if 'plus' not in alg:
                 unknowns = unknowns - set(negatives)
 
@@ -552,7 +696,22 @@ class Alg_Runner:
                 if self.rank_pos is True:
                     nodes_to_rank = set(list(pos_test))
 
-                # TODO use the list of parameters rather than the first one. 
+                # 
+                if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
+                    y = np.zeros(self.normalized_nets[0].shape[0])
+                    y[pos_train] = 1
+                    y[neg_train] = -1
+
+                    #W = setup.weight_SWSN(curr_train_ann_mat, self.sparse_networks,
+                    #        net_names=self.net_names, out_file=out_file, nodes=prots)
+                    # TODO add an option for this
+                    # for now, weight the network for each GO term individually
+                    W = setup.weight_net_goterm(y, self.normalized_nets, self.net_names, goid)
+                    self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
+                    if alg == 'genemania':
+                        self.L = genemania.setup_laplacian(W)
+
+                # TODO use the list of parameters (e.g., alpha, eps) rather than the first one.
                 scores, params_results, _ = self.run_alg(alg, pos_train, neg_train,
                         nodes_to_rank=nodes_to_rank, goid=goid,
                         a=self.a_list[0], eps=self.eps_list[0], k=self.k_list[0],
@@ -674,12 +833,16 @@ class Alg_Runner:
             if not os.path.isfile(out_file):
                 print("Writing results to %s" % (out_file))
                 with open(out_file, 'w') as out:
-                    out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
+                    if taxon == '-':
+                        out.write("goid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
+                    else:
+                        out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
             else:
                 print("Appending results to %s" % (out_file))
             with open(out_file, 'a') as out:
-                out.write(''.join(["%s\t%s\t%0.4f\t%0.4f\t%0.4f\t%0.4f\t%d\n" % (
-                    taxon, g, fmax, avgp, auprc, auroc, goid_num_pos[g]
+                out.write(''.join(["%s%s\t%0.4f\t%0.4f\t%0.4f\t%0.4f\t%d\n" % (
+                    "%s\t"%taxon if taxon != "-" else "",
+                    g, fmax, avgp, auprc, auroc, goid_num_pos[g]
                     ) for g, (fmax, avgp, auprc, auroc) in goid_stats.items()]))
 
         if write_prec_rec:
@@ -832,6 +995,8 @@ def parse_args(args):
 
     # parameters for running algorithms
     group = OptionGroup(parser, 'Algorithm options')
+    group.add_option('', '--weight-swsn', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
     group.add_option('', '--unweighted', action="store_true", default=False,
                      help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
     group.add_option('-l', '--sinksourceplus-lambda', type=float, 
@@ -859,6 +1024,16 @@ def parse_args(args):
     group.add_option('', '--compare-ranks', action="store_true", default=False,
                      help="Compare how long it takes (# iters) for the ranks to match the final fixed ranks." +
                      "Currently only implemented with ss_squeeze and --rank-topk, --rank-all")
+    parser.add_option_group(group)
+
+    # birgrank options
+    group = OptionGroup(parser, 'BirgRank options')
+    group.add_option('-b', '--obo-file', type='string', default=f_settings.GO_FILE,
+                     help="GO OBO file which contains the GO DAG. Used if running AptRank/BirgRank. Default: %s" % (f_settings.GO_FILE))
+    group.add_option('', '--theta', type=float, default=.5,
+                     help="BirgRank parameter: (1-theta) percent of Rtrain used in seeding vectors")
+    group.add_option('', '--mu', type=float, default=.5,
+                     help="BirgRank parameter: (1-mu) percent of random walkers diffuse from G via Rtrain to H")
     parser.add_option_group(group)
 
     # additional parameters
@@ -929,22 +1104,45 @@ def run():
     # load the network matrix and protein IDs
     net_file = opts.net_file
     if net_file is None:
-        _, _, net_file, _ = f_settings.set_version(opts.version) 
-    W, prots = alg_utils.setup_sparse_network(net_file)
+    #    _, _, net_file, _ = f_settings.set_version(opts.version) 
+    #else:
+        INPUTSPREFIX, _, net_file, selected_strains = f_settings.set_version(opts.version) 
+    # TODO this should be better organized so that any STRING networks
+    # can be used
+    if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
+        string_nets = setup.CORE_STRING_NETWORKS
+        out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
+        utils.checkDir(out_pref_net)
+        # build the file containing the sparse networks
+        sparse_networks, network_names, prots = setup.create_sparse_net_file(
+            opts.version, out_pref_net, selected_strains=selected_strains,
+            string_nets=string_nets, string_cutoff=f_settings.STRING_CUTOFF,
+            forcenet=False)
+        # TODO organize this better
+        W = (sparse_networks, network_names)
+    else:
+        W, prots = alg_utils.setup_sparse_network(net_file)
     # now build the annotation matrix
     ann_matrix, goids = setup.setup_sparse_annotations(opts.pos_neg_file, goterms, prots,
                              selected_species=None, taxon=None)
+
+    # TODO make this more streamlined
+    aptrank_data = None 
+    if 'birgrank' in opts.algorithm:
+        dag_matrix, pos_matrix, dag_goids = run_birgrank.setup_h_ann_matrices(
+                prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
+        aptrank_data = (dag_matrix, pos_matrix, dag_goids)
 
     alg_runner = Alg_Runner(
         opts.version, opts.exp_name,
         W, prots, ann_matrix, goids,
         #goid_pos, goid_neg, goterms, opts.net_file, opts.algorithm,
-        opts.algorithm,
+        opts.algorithm, opts.weight_swsn,
         unweighted=opts.unweighted, ss_lambda=opts.sinksourceplus_lambda,
         k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=opts.alpha,
         eps_list=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
         rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos=opts.rank_pos, compare_ranks=opts.compare_ranks,
-        num_pred_to_write=opts.num_pred_to_write,
+        num_pred_to_write=opts.num_pred_to_write, aptrank_data=aptrank_data,
         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
         forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
     alg_runner.main()

@@ -232,3 +232,39 @@ if __name__ == "__main__":
     ignore_ec = [] if opts.ignore_ec is None else opts.ignore_ec.split(',') 
     main(opts.net_file, opts.obo_file, opts.pos_neg_file, opts.gaf_file,
          ignore_ec=ignore_ec, out_pref=opts.out_pref)
+
+
+def setup_h_ann_matrices(prots, obo_file, pos_neg_files, goterms=None):
+    # TODO allow adding multiple pos_neg_files
+    if len(pos_neg_files) > 1:
+        print("Birgrank not yet implemented with multiple GO hierarchies. Use only bp or mf")
+        sys.exit()
+    # parse the go_dags first as it also sets up the goid_to_category dictionary
+    # TODO store the go dags as a file 
+    go_dags = go_examples.parse_obo_file_and_build_dags(obo_file)
+
+    # combine the matrices from bp and mf
+    # would it make a difference running them together vs separately? I guess potentially it could
+    # especially if I included part_of edges
+    # TODO the hstack doesn't actually work yet
+    dag_matrix = sparse.csr_matrix((0,0))
+    ann_matrix = sparse.csr_matrix((0,0))
+    goids = []
+    # TODO build a matrix with the direct annotations (i.e., from the gaf file)
+        # propagate the predictions(?)
+    # for now, just use all of the propagated annotations
+    # and then evaluate using the scores
+    for pos_neg_file in pos_neg_files:
+        if 'bp' in pos_neg_file:
+            h = 'bp'
+        elif 'mf' in pos_neg_file:
+            h = 'mf'
+        elif 'cc' in pos_neg_file:
+            h = 'cc'
+        curr_dag_matrix, curr_ann_matrix, curr_goids = build_h_ann_matrices(
+            prots, go_dags, pos_neg_files=[pos_neg_file], h=h, goterms=goterms)
+        dag_matrix = sparse.hstack([dag_matrix,curr_dag_matrix])
+        ann_matrix = sparse.hstack([ann_matrix,curr_ann_matrix])
+        goids += curr_goids
+
+    return dag_matrix, ann_matrix, goids
