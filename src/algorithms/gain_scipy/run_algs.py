@@ -400,12 +400,12 @@ class Alg_Runner:
         out_file = None
         if out_pref is not None:
             out_file = "%sa%s-eps%s.txt" % (
-                    out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
+                    out_pref, str(a).replace('.', '_'), str(self.eps).replace('.', '_'))
             #header = "#%s\tGO term: %s\t%d positives\t%d negatives\ta=%s\teps=%s\n" \
             #        % (alg, goterm, len(positives), len(negatives), str(a), str(eps))
 
         goid_scores, params_results = self.run_alg_on_goterms(alg,
-                out_file=out_file, a=a, eps=eps)
+                out_file=out_file, a=a, eps=self.eps)
         all_params_results.update(params_results)
 
         if self.verbose:
