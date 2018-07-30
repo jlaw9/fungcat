@@ -57,21 +57,14 @@ def parse_args(args):
 def main(sparse_net_file, obo_file, pos_neg_files=None, gaf_file=None, ignore_ec=["IEA"],
          alpha=.5, theta=.5, mu=.5, h="bp", out_pref=None):
 #):
-    print("Reading network from %s" % (sparse_net_file))
-    sparse_net = sparse.load_npz(sparse_net_file)
-    node2idx_file = sparse_net_file + "-node-ids.txt"
-    print("Reading node names from %s" % (node2idx_file))
-    if not os.path.isfile(node2idx_file):
-        node2idx_file = sparse_net_file.replace('-normalized.npz', '-node2idx.txt')
-        print("\tDoesn't exist. Checking %s" % (node2idx_file))
-    prots = utils.readItemList(node2idx_file, 1)
 
+    W, prots = alg_utils.setup_sparse_network(sparse_net_file)
     # parse the go_dags first as it also sets up the goid_to_category dictionary
     go_dags = go_examples.parse_obo_file_and_build_dags(obo_file)
 
-    dag_matrix, an_matrix, goids = build_h_ann_matrices(prots, go_dags, pos_neg_files=None, gaf_file=None, h='bp')
+    dag_matrix, ann_matrix, goids = build_h_ann_matrices(prots, go_dags, pos_neg_files=pos_neg_files, gaf_file=gaf_file, h='bp')
     # make sure they're type float so matlab will parse them correctly
-    sparse_net = sparse_net.astype('float') 
+    sparse_net = W.astype('float') 
     ann_matrix = ann_matrix.astype('float') 
     dag_matrix = dag_matrix.astype('float')
 
@@ -90,11 +83,23 @@ def main(sparse_net_file, obo_file, pos_neg_files=None, gaf_file=None, ignore_ec
 
     run_birgrank = True 
     if run_birgrank is True:
-        Xh = birgRank(sparse_net, ann_matrix.transpose(), dag_matrix, alpha=.5, theta=.5, mu=.5)
+        #Xh = birgRank(sparse_net, ann_matrix.transpose(), dag_matrix, alpha=.5, theta=.5, mu=.5)
+        Xh = birgRank(sparse_net, ann_matrix.transpose(), dag_matrix, alpha=.5, theta=.5, mu=.5, eps=0.0001, max_iters=1000, verbose=True)
+        Xh = Xh.T
+        #print(Xh)
+        print(Xh.shape)
 
         # TODO write the results to a file (?)
         # for now, just print a single value to see if it matches with Matlab
-        print(Xh[55986, 1])
+        #print(Xh[55986, 1])
+        out_file = "%s%s-pred-scores.txt" % (out_pref, h)
+        print("\twriting scores to %s" % (out_file))
+        # write the results for a single GO term
+        with open(out_file, 'w') as out:
+            for i in range(Xh.shape[0]):
+                print("writing results for goterm %s" % (goids[i]))
+                out.write(''.join("%s\t%s\t%s\n" % (goids[i], prots[j], score) for j, score in enumerate(Xh[i].toarray().flatten())))
+                break
     return
 
 
@@ -227,13 +232,6 @@ def build_hierarchy_matrix(go_dag, goids, h="bp"):
     return dag_matrix, goids_list
 
 
-if __name__ == "__main__":
-    opts = parse_args(sys.argv)
-    ignore_ec = [] if opts.ignore_ec is None else opts.ignore_ec.split(',') 
-    main(opts.net_file, opts.obo_file, opts.pos_neg_file, opts.gaf_file,
-         ignore_ec=ignore_ec, out_pref=opts.out_pref)
-
-
 def setup_h_ann_matrices(prots, obo_file, pos_neg_files, goterms=None):
     # TODO allow adding multiple pos_neg_files
     if len(pos_neg_files) > 1:
@@ -268,3 +266,10 @@ def setup_h_ann_matrices(prots, obo_file, pos_neg_files, goterms=None):
         goids += curr_goids
 
     return dag_matrix, ann_matrix, goids
+
+
+if __name__ == "__main__":
+    opts = parse_args(sys.argv)
+    ignore_ec = [] if opts.ignore_ec is None else opts.ignore_ec.split(',') 
+    main(opts.net_file, opts.obo_file, opts.pos_neg_file, opts.gaf_file,
+         ignore_ec=ignore_ec, out_pref=opts.out_pref)
