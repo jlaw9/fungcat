@@ -56,24 +56,27 @@ def parse_args(args):
 
     # parameters for running algorithms
     group = OptionGroup(parser, 'Algorithm options')
+    group.add_option('', '--weight-swsn', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
     group.add_option('', '--unweighted', action="store_true", default=False,
                      help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
     group.add_option('-l', '--sinksourceplus-lambda', type=float, 
                      help="lambda parameter to specify the weight connecting the unknowns to the negative 'ground' node. Default=None")
+    group.add_option('-a', '--alpha', type=float, default=0.8,
+                     help="Alpha insulation parameter. Default=0.8")
+    group.add_option('', '--eps', type=float, default=0.0001,
+                     help="Stopping criteria for SinkSource. Default=0.0001")
+    group.add_option('', '--max-iters', type=int, default=1000,
+                     help="Maximum # of iterations for SinkSource. Default=1000")
+    # ripple/squeeze parameters
     group.add_option('-k', '--k', type=int, action="append",
                      help="Top-k for Ripple, Default=200")
+    group.add_option('-e', '--epsUB', type=float, action="append",
+                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
     group.add_option('-t', '--t', type=int, action="append",
                      help="t parameter for Ripple. Default=2")
     group.add_option('-s', '--s', type=int, action="append",
                      help="s parameter for Ripple. Default=200")
-    group.add_option('-a', '--alpha', type=float, action="append",
-                     help="Alpha insulation parameter. Default=0.8")
-    group.add_option('', '--eps', type=float, action="append",
-                     help="Stopping criteria for SinkSource")
-    group.add_option('', '--max-iters', type=int, default=1000,
-                     help="Maximum # of iterations for SinkSource. Default=1000")
-    group.add_option('-e', '--epsUB', type=float, action="append",
-                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
     # birgrank options
     group.add_option('', '--theta', type=float, default=.5,
                      help="BirgRank parameter: (1-theta) percent of Rtrain used in seeding vectors")
@@ -82,16 +85,16 @@ def parse_args(args):
     parser.add_option_group(group)
 
     # parameters for STRING networks
-    group = OptionGroup(parser, 'STRING options (only used if STRING is part of the version)')
-    #group.add_option('', '--only-combined', action="store_true", default=False,
-    #        help="Use only the STRING combined network: \n\tcombined_score")
-    #group.add_option('', '--only-core', action="store_true", default=False,
-    #        help="Use only the 6 core networks: \n\t%s" % (', '.join(setup.CORE_STRING_NETWORKS)))
-    #group.add_option('', '--non-transferred', action="store_true", default=False,
-    #        help="Use all non-transferred networks: \n\t%s" % (', '.join(NON_TRANSFERRED_STRING_NETWORKS)))
-    #group.add_option('', '--all-string', action="store_true", default=False,
-    #        help="Use all individual 13 STRING networks: \n\t%s" % (', '.join(STRING_NETWORKS)))
-    group.add_option('-S', '--string-networks', type='string', default=', '.join(setup.CORE_STRING_NETWORKS),
+    group = OptionGroup(parser, 'STRING options')
+    group.add_option('', '--string-combined', action="store_true", default=False,
+            help="Use only the STRING combined network: \n\tcombined_score")
+    group.add_option('', '--string-core', action="store_true", default=False,
+            help="Use only the 6 core networks: \n\t%s" % (', '.join(setup.CORE_STRING_NETWORKS)))
+    group.add_option('', '--string-non-transferred', action="store_true", default=False,
+            help="Use all non-transferred networks: \n\t%s" % (', '.join(setup.NON_TRANSFERRED_STRING_NETWORKS)))
+    group.add_option('', '--string-all', action="store_true", default=False,
+            help="Use all individual 13 STRING networks: \n\t%s" % (', '.join(setup.STRING_NETWORKS)))
+    group.add_option('-S', '--string-networks', type='string', 
             help="Comma-separated list of string networks to use. " +
                  "If specified, other STRING options will be ignored." +
                  "Default: %s" % (', '.join(setup.CORE_STRING_NETWORKS)))
@@ -142,16 +145,36 @@ def parse_args(args):
     opts.k = opts.k if opts.k is not None else [200]
     opts.t = opts.t if opts.t is not None else [2]
     opts.s = opts.s if opts.s is not None else [200]
-    opts.alpha = opts.alpha if opts.alpha is not None else [0.8]
     # default for deltaUBLB is None
     opts.eps = opts.eps if opts.eps is not None else [0.0001]
     opts.epsUB = opts.epsUB if opts.epsUB is not None else [0]
+
+    # setup the selection of string networks 
+    string_networks = []
+    if opts.string_networks:
+        string_networks = opts.string_networks.split(',')
+        for net in string_networks:
+            if net not in setup.STRING_NETWORKS:
+                print("ERROR: STRING network '%s' not one of the" +
+                      "available choices which are: \n\t%s" % (net, ', '.join(setup.STRING_NETWORKS)))
+                sys.exit(1)
+    elif opts.string_combined:
+        string_networks = ['combined_score']
+    elif opts.string_core:
+        string_networks = setup.CORE_STRING_NETWORKS
+    elif opts.string_non_transferred:
+        string_networks = setup.NON_TRANSFERRED_STRING_NETWORKS
+    elif opts.string_all:
+        string_networks = setup.STRING_NETWORKS
+    else:
+        string_networks = setup.CORE_STRING_NETWORKS
+    opts.string_networks = string_networks
 
     return opts
 
 
 def main(version, exp_name, W, prots, ann_matrix, goids,
-         algorithms, opts, taxons=None, alpha=0.8, dag_matrix=None,
+         algorithms, opts, taxons=None, dag_matrix=None,
          eval_ann_matrix=None):
     """
     *W*: If using STRING networks, then W should be a tuple containing
@@ -171,7 +194,7 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
 
     # TODO make this more streamlined
     if 'birgrank' in algorithms:
-        dag_matrix, pos_matrix, dag_goids = alg_utils.setup_h_ann_matrices(
+        dag_matrix, pos_matrix, dag_goids = run_birgrank.setup_h_ann_matrices(
                 prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
     if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
         sparse_networks, net_names = W
@@ -202,7 +225,7 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
             RESULTSPREFIX, alg, exp_name,
             'unw-' if opts.unweighted else '', 
             0 if opts.sinksourceplus_lambda is None else opts.sinksourceplus_lambda,
-            str(alpha).replace('.', '_'))
+            str(opts.alpha).replace('.', '_'))
 
         if os.path.isfile(out_file) and opts.forcealg:
             if len(taxons) > 1: 
@@ -291,7 +314,8 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
             # not needed for lil matrix
             #train_pos_mat.eliminate_zeros() 
 
-        if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
+        if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] \
+                and opts.weight_swsn:
             # use the simultaneous weighting method to weight the networks
             out_file = "inputs/%s/%s/%d-nets-combined-SWSN-leave-out-%s.npz" % (
                 version, exp_name, len(sparse_networks), s)
@@ -322,18 +346,18 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
             # leave alpha at default 0.8
             alg_runner = run_algs.Alg_Runner(
                 version, exp_name, W, prots, train_ann_mat, goids,
-                algorithms=[alg], unweighted=opts.unweighted,
+                algorithms=[alg], weight_swsn=opts.weight_swsn, unweighted=opts.unweighted,
                 ss_lambda=opts.sinksourceplus_lambda,
-                eps_list=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
-                k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=[alpha],
+                eps=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
+                k_list=opts.k, t_list=opts.t, s_list=opts.s, 
+                alpha=opts.alpha, theta=opts.theta, mu=opts.mu,
                 num_pred_to_write=opts.num_pred_to_write, verbose=opts.verbose, 
                 forcealg=opts.forcealg, progress_bar=False)
             if alg == 'birgrank':
                 # the W matrix is already normalized, so I can run
                 # birgrank/aptrank from here
                 goid_scores = alg_runner.run_aptrank_with_params(
-                    train_pos_mat, dag_matrix, alg=alg, alpha=alpha,
-                    theta=opts.theta, mu=opts.mu) 
+                    train_pos_mat, dag_matrix, alg=alg) 
                 curr_goids = dag_goids.copy() 
             else:
                 curr_goids = goids.copy()
@@ -356,7 +380,7 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
                 0 if alg_runner.ss_lambda is None else int(alg_runner.ss_lambda))
             if alg == 'birgrank':
                 out_pref += 'a%s-t%s-m%s' % (
-                    str(alpha).replace('.','_'), str(opts.theta).replace('.','_'),
+                    str(opts.alpha).replace('.','_'), str(opts.theta).replace('.','_'),
                     str(opts.mu).replace('.','_'))
             alg_runner.evaluate_ground_truth(
                 goid_scores, curr_goids, test_ann_mat, out_pref,
@@ -381,13 +405,12 @@ def run():
     # TODO this should be better organized so that any STRING networks
     # can be used
     if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
-        string_nets = setup.CORE_STRING_NETWORKS
         out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
         utils.checkDir(out_pref_net)
         # build the file containing the sparse networks
         sparse_networks, network_names, prots = setup.create_sparse_net_file(
             opts.version, out_pref_net, selected_strains=selected_strains,
-            string_nets=string_nets, string_cutoff=f_settings.STRING_CUTOFF,
+            string_nets=opts.string_networks, string_cutoff=f_settings.STRING_CUTOFF,
             forcenet=False)
         # TODO organize this better
         W = (sparse_networks, network_names)
@@ -428,10 +451,9 @@ def run():
         test_ann_matrix = matching_test_matrix
 
     # TODO alpha doesn't change for all algorithms, just SS
-    for alpha in opts.alpha:
-        main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,
-             opts.algorithm, opts, taxons=opts.taxon, alpha=alpha,
-             eval_ann_matrix=test_ann_matrix)
+    main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,
+         opts.algorithm, opts, taxons=opts.taxon,
+         eval_ann_matrix=test_ann_matrix)
 
 
 if __name__ == "__main__":
