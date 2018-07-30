@@ -63,9 +63,10 @@ class Alg_Runner:
             self, version, exp_name,
             W, prots, ann_matrix, goids,
             algorithms=["sinksource"], weight_swsn=False,
-            unweighted=False, ss_lambda=None, eps_list=[0.0001], 
-            k_list=[100], t_list=[2], s_list=[50], a_list=[0.8], 
-            deltaUBLB_list=[None], epsUB_list=[0], max_iters=1000,
+            unweighted=False, ss_lambda=None, 
+            alpha=0.8, eps=0.0001, max_iters=1000,
+            k_list=[100], t_list=[2], s_list=[50],  
+            deltaUBLB_list=[None], epsUB_list=[0], 
             rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
             taxon=None, num_pred_to_write=100, 
             aptrank_data=None, theta=.5, mu=.5,
@@ -89,9 +90,7 @@ class Alg_Runner:
         self.unweighted = unweighted
         self.ss_lambda = ss_lambda
         # parameters for algorithms
-        self.eps_list = eps_list
-        self.max_iters = max_iters
-        self.a_list = a_list
+        self.alpha, self.eps, self.max_iters = alpha, eps, max_iters
         # ripple/squeeze parameters
         self.k_list = k_list
         self.t_list = t_list
@@ -177,7 +176,7 @@ class Alg_Runner:
             # "cross validation mode" is run if the user specifies --cross-validation-folds X
             if self.cross_validation_folds is not None:
                 if self.weight_swsn is True or alg == "birgrank":
-                    self.run_cv_all_goterms(alg, folds=5)
+                    self.run_cv_all_goterms(alg, folds=self.cross_validation_folds)
                 else:
                     out_pref = "%s/cv-%dfolds-%sl%d-" % (self.out_dir, self.cross_validation_folds,
                         'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
@@ -225,7 +224,7 @@ class Alg_Runner:
         out_pref = "%s/cv-%dfolds-all-goids-%sl%d-" % (self.out_dir, self.cross_validation_folds,
                 'unw-' if self.unweighted else '', 0 if self.ss_lambda is None else int(self.ss_lambda))
         if alg == 'birgrank':
-            alpha, theta, mu = self.a_list[0], self.theta, self.mu
+            alpha, theta, mu = self.alpha, self.theta, self.mu
             out_pref += 'a%s-t%s-m%s' % (
                 str(alpha).replace('.','_'), str(theta).replace('.','_'),
                 str(mu).replace('.','_'))
@@ -252,17 +251,23 @@ class Alg_Runner:
                 train_pos_mat = sparse.lil_matrix(self.pos_matrix.shape)
                 # the birgrank/aptrank annotation (positive) matrix has a different # GO terms,
                 # but the same node columns. So I just need to align the rows
+                # Also, speed-up birgrank by only getting the scores for the nodes that are a positive or negative for at least 1 GO term
+                test_nodes = set()
                 for i in range(len(self.goids)):
                     dag_goid_idx = dag_goids2idx[self.goids[i]]
                     train_pos_mat[dag_goid_idx] = train_ann_mat[i]
+                    test_nodes.update(set(list(train_ann_mat[i].nonzero()[1])))
                 # now set the negatives to 0 as birgrank doesn't use negatives
                 train_pos_mat[train_pos_mat < 0] = 0
 
                 # the W matrix is already normalized, so I can run
                 # birgrank/aptrank from here
-                goid_scores = self.run_aptrank_with_params(
-                    train_pos_mat, self.dag_matrix, alg=alg, alpha=alpha,
-                    theta=theta, mu=mu) 
+                Xh = self.run_aptrank_with_params(
+                    train_pos_mat, self.dag_matrix, alg=alg, nodes=test_nodes) 
+                goid_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+                # limit the scores to only the GOIDs for which we have annotations
+                for i in range(len(self.goids)):
+                    goid_scores[i] = Xh[dag_goids2idx[self.goids[i]]]
             else:
                 # change the annotation matrix to the current fold
                 self.ann_matrix = train_ann_mat
@@ -277,10 +282,10 @@ class Alg_Runner:
                 curr_comb_scores[test_neg] = curr_goid_scores[test_neg]
                 combined_fold_scores[i] = curr_comb_scores 
 
-        curr_goids = self.dag_goids if alg == 'birgrank' else self.goids
+        #curr_goids = self.dag_goids if alg == 'birgrank' else self.goids
         # now evaluate the results and write to a file
         self.evaluate_ground_truth(
-            combined_fold_scores, curr_goids, orig_ann_matrix, out_pref,
+            combined_fold_scores, self.goids, orig_ann_matrix, out_pref,
             #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
             alg=alg)
 
@@ -323,12 +328,12 @@ class Alg_Runner:
 
         return ann_matrix_folds
 
-    def run_aptrank_with_params(self, pos_mat, hierarchy_mat, alg='birgrank',
-                                alpha=.5, theta=.5, mu=.5, out_pref=None):
+    def run_aptrank_with_params(self, pos_mat, hierarchy_mat, alg='birgrank', nodes=None, out_pref=None):
         """ Run a protein-based algorithm that uses the hierarchy
         *hierarchy_matrix*: matrix of hierarchy relationships
         *pos_matrix*: matrix of goterm - protein annotations (1 or 0).
             Normally these would be the leaf annotations, not propagated
+        *nodes*: set of nodes for which to run RWR and get GO term scores
 
         *returns*: a matrix of prediction scores with the same
             dimensions as pos_mat
@@ -344,7 +349,9 @@ class Alg_Runner:
         #pos_mat[pos_mat < 0] = 0
         if alg == 'birgrank':
             Xh = birgRank(self.P, pos_mat.transpose(), hierarchy_mat,
-                        alpha=alpha, theta=theta, mu=mu)
+                        alpha=self.alpha, theta=self.theta, mu=self.mu, 
+                        eps=self.eps, max_iters=self.max_iters,
+                        nodes=nodes, verbose=self.verbose)
             Xh = Xh.T
         else:
             print("alg %s not yet implemented." % (alg))
@@ -352,8 +359,8 @@ class Alg_Runner:
         # now write the scores to a file
         if out_pref is not None:
             out_file = "%sa%s-t%s-m%s.txt" % (
-                out_pref, str(alpha).replace('.', '_'),
-                str(theta).replace('.', '_'), str(mu).replace('.', '_'))
+                out_pref, str(self.alpha).replace('.', '_'),
+                str(self.theta).replace('.', '_'), str(self.mu).replace('.', '_'))
             print("\twriting top %d scores to %s" % (self.num_pred_to_write, out_file))
 
             with open(out_file, 'w') as out:
@@ -389,32 +396,33 @@ class Alg_Runner:
     def run_ss_with_params(self, alg, out_pref=None):
         all_params_results = {} 
         #for a, eps in tqdm(list(itertools.product(*[a_list, eps_list]))):
-        for a, eps in itertools.product(*[self.a_list, self.eps_list]):
-            out_file = None
-            if out_pref is not None:
-                out_file = "%sa%s-eps%s.txt" % (
-                        out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
-                #header = "#%s\tGO term: %s\t%d positives\t%d negatives\ta=%s\teps=%s\n" \
-                #        % (alg, goterm, len(positives), len(negatives), str(a), str(eps))
+        a = self.alpha
+        out_file = None
+        if out_pref is not None:
+            out_file = "%sa%s-eps%s.txt" % (
+                    out_pref, str(a).replace('.', '_'), str(eps).replace('.', '_'))
+            #header = "#%s\tGO term: %s\t%d positives\t%d negatives\ta=%s\teps=%s\n" \
+            #        % (alg, goterm, len(positives), len(negatives), str(a), str(eps))
 
-            goid_scores, params_results = self.run_alg_on_goterms(alg,
-                    out_file=out_file, a=a, eps=eps)
-            all_params_results.update(params_results)
+        goid_scores, params_results = self.run_alg_on_goterms(alg,
+                out_file=out_file, a=a, eps=eps)
+        all_params_results.update(params_results)
 
-            if self.verbose:
-                print(params_results_to_table(params_results))
+        if self.verbose:
+            print(params_results_to_table(params_results))
         return goid_scores, all_params_results
 
     def run_topk_with_params(self, alg, out_pref=None):
         all_params_results = {}
 
+        a = self.alpha
         # Run using all combinations of parameters
         # s and t won't change the results, just the amount of time, so loop through those separately
-        total_params_list = list(itertools.product(*[self.k_list, self.t_list, self.s_list, self.a_list, self.epsUB_list]))
+        total_params_list = list(itertools.product(*[self.k_list, self.t_list, self.s_list, self.epsUB_list]))
         #params_list = list(itertools.product(*[k_list, a_list, deltaUBLB_list]))
         #t_s_list = list(itertools.product(*[t_list, s_list]))
         print("Running %d combinations of parameters" % (len(total_params_list)))
-        for k, a, epsUB in itertools.product(*[self.k_list, self.a_list, self.epsUB_list]):
+        for k, epsUB in itertools.product(*[self.k_list, self.epsUB_list]):
 
             if "ripple" in alg:
                 for t, s in itertools.product(*[self.t_list, self.s_list]):
@@ -486,6 +494,16 @@ class Alg_Runner:
                 if len(positives) < 10:
                     tqdm.write("Skipping goterm %s. It has %d annotations which is < the minimum 10." % (goid, len(positives)))
                     continue
+                
+                if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
+                    y = np.zeros(self.normalized_nets[0].shape[0])
+                    y[positives] = 1
+                    y[negatives] = -1
+                    # weight the network for each GO term individually
+                    W = setup.weight_net_goterm(y, self.normalized_nets, self.net_names, goid)
+                    self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
+                    if alg == 'genemania':
+                        self.L = genemania.setup_laplacian(W)
 
                 scores_arr, curr_params_results, _ = self.run_alg(alg, positives, negatives, 
                         a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid)
@@ -655,12 +673,12 @@ class Alg_Runner:
     #        #predition_scores, time, iters = sinksource.runSinkSource(H, positives, negatives=None, max_iters=1000, delta=eps, a=a)
 
         print("Running cross-validation for %d goterms using %d folds for %s; a=%s, eps=%s" % (
-            self.ann_matrix.shape[0], self.cross_validation_folds, alg, self.a_list[0], self.eps_list[0]))
+            self.ann_matrix.shape[0], self.cross_validation_folds, alg, self.alpha, self.eps))
 
         out_file = None
         if out_pref is not None:
             out_file = "%sa%s-eps%s.txt" % (
-                    out_pref, str(self.a_list[0]).replace('.', '_'), str(self.eps_list[0]).replace('.', '_'))
+                    out_pref, str(self.alpha).replace('.', '_'), str(self.eps).replace('.', '_'))
             print("Writing CV results to %s" % (out_file))
             file_handle = open(out_file, 'w')
             file_handle.write("#goterm\tfmax\n")
@@ -714,7 +732,7 @@ class Alg_Runner:
                 # TODO use the list of parameters (e.g., alpha, eps) rather than the first one.
                 scores, params_results, _ = self.run_alg(alg, pos_train, neg_train,
                         nodes_to_rank=nodes_to_rank, goid=goid,
-                        a=self.a_list[0], eps=self.eps_list[0], k=self.k_list[0],
+                        a=self.alpha, eps=self.eps, k=self.k_list[0],
                         t=self.t_list[0], s=self.s_list[0], epsUB=self.epsUB_list[0])
                     # scores is a dictionary of node integers 
                     # containing only scores for the non-positive and non-negative nodes
@@ -828,13 +846,13 @@ class Alg_Runner:
             #out_file = "%s.txt" % (out_pref)
             #if alg in ['sinksource', 'sinksourceplus']:
             out_file = "%sa%s.txt" % (
-                    out_pref, str(self.a_list[0]).replace('.', '_'))
+                    out_pref, str(self.alpha).replace('.', '_'))
             # don't write the header each time
             if not os.path.isfile(out_file):
                 print("Writing results to %s" % (out_file))
                 with open(out_file, 'w') as out:
                     if taxon == '-':
-                        out.write("goid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
+                        out.write("#goid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
                     else:
                         out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
             else:
@@ -850,7 +868,7 @@ class Alg_Runner:
                 out_pref, taxon, '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
             if alg in ['sinksource', 'sinksourceplus']:
                 out_file = "%sa%s-prec-rec%s%s.txt" % (
-                    out_pref, str(self.a_list[0]).replace('.', '_'), taxon,
+                    out_pref, str(self.alpha).replace('.', '_'), taxon,
                     '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
             print("writing prec/rec to %s" % (out_file))
             with open(out_file, 'w') as out:
@@ -1001,20 +1019,21 @@ def parse_args(args):
                      help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
     group.add_option('-l', '--sinksourceplus-lambda', type=float, 
                      help="lambda parameter to specify the weight connecting the unknowns to the negative 'ground' node. Default=None")
+    group.add_option('-a', '--alpha', type=float, default=0.8,
+                     help="Alpha insulation parameter. Default=0.8")
+    group.add_option('', '--eps', type=float, default=0.0001,
+                     help="Stopping criteria for SinkSource. Default=0.0001")
+    group.add_option('', '--max-iters', type=int, default=1000,
+                     help="Maximum # of iterations for SinkSource. Default=1000")
+    # ripple/squeeze parameters
     group.add_option('-k', '--k', type=int, action="append",
                      help="Top-k for Ripple, Default=200")
+    group.add_option('-e', '--epsUB', type=float, action="append",
+                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
     group.add_option('-t', '--t', type=int, action="append",
                      help="t parameter for Ripple. Default=2")
     group.add_option('-s', '--s', type=int, action="append",
                      help="s parameter for Ripple. Default=200")
-    group.add_option('-a', '--alpha', type=float, action="append",
-                     help="Alpha insulation parameter. Default=0.8")
-    group.add_option('', '--eps', type=float, action="append",
-                     help="Stopping criteria for SinkSource")
-    group.add_option('', '--max-iters', type=int, default=1000,
-                     help="Maximum # of iterations for SinkSource. Default=1000")
-    group.add_option('-e', '--epsUB', type=float, action="append",
-                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
     group.add_option('', '--rank-topk', action="store_true", default=False,
                      help="Continue iterating until the top-k nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
     group.add_option('', '--rank-all', action="store_true", default=False,
@@ -1034,6 +1053,22 @@ def parse_args(args):
                      help="BirgRank parameter: (1-theta) percent of Rtrain used in seeding vectors")
     group.add_option('', '--mu', type=float, default=.5,
                      help="BirgRank parameter: (1-mu) percent of random walkers diffuse from G via Rtrain to H")
+    parser.add_option_group(group)
+
+    # parameters for STRING networks
+    group = OptionGroup(parser, 'STRING options')
+    group.add_option('', '--string-combined', action="store_true", default=False,
+            help="Use only the STRING combined network: \n\tcombined_score")
+    group.add_option('', '--string-core', action="store_true", default=False,
+            help="Use only the 6 core networks: \n\t%s" % (', '.join(setup.CORE_STRING_NETWORKS)))
+    group.add_option('', '--string-non-transferred', action="store_true", default=False,
+            help="Use all non-transferred networks: \n\t%s" % (', '.join(setup.NON_TRANSFERRED_STRING_NETWORKS)))
+    group.add_option('', '--string-all', action="store_true", default=False,
+            help="Use all individual 13 STRING networks: \n\t%s" % (', '.join(setup.STRING_NETWORKS)))
+    group.add_option('-S', '--string-networks', type='string', 
+            help="Comma-separated list of string networks to use. " +
+                 "If specified, other STRING options will be ignored." +
+                 "Default: %s" % (', '.join(setup.CORE_STRING_NETWORKS)))
     parser.add_option_group(group)
 
     # additional parameters
@@ -1086,10 +1121,28 @@ def parse_args(args):
     opts.k = opts.k if opts.k is not None else [200]
     opts.t = opts.t if opts.t is not None else [2]
     opts.s = opts.s if opts.s is not None else [200]
-    opts.alpha = opts.alpha if opts.alpha is not None else [0.8]
-    # default for deltaUBLB is None
-    opts.eps = opts.eps if opts.eps is not None else [0.0001]
     opts.epsUB = opts.epsUB if opts.epsUB is not None else [0]
+
+    # setup the selection of string networks 
+    string_networks = []
+    if opts.string_networks:
+        string_networks = opts.string_networks.split(',')
+        for net in string_networks:
+            if net not in setup.STRING_NETWORKS:
+                print("ERROR: STRING network '%s' not one of the" +
+                      "available choices which are: \n\t%s" % (net, ', '.join(setup.STRING_NETWORKS)))
+                sys.exit(1)
+    elif opts.string_combined:
+        string_networks = ['combined_score']
+    elif opts.string_core:
+        string_networks = setup.CORE_STRING_NETWORKS
+    elif opts.string_non_transferred:
+        string_networks = setup.NON_TRANSFERRED_STRING_NETWORKS
+    elif opts.string_all:
+        string_networks = setup.STRING_NETWORKS
+    else:
+        string_networks = setup.CORE_STRING_NETWORKS
+    opts.string_networks = string_networks
 
     return opts
 
@@ -1110,13 +1163,12 @@ def run():
     # TODO this should be better organized so that any STRING networks
     # can be used
     if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
-        string_nets = setup.CORE_STRING_NETWORKS
         out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
         utils.checkDir(out_pref_net)
         # build the file containing the sparse networks
         sparse_networks, network_names, prots = setup.create_sparse_net_file(
             opts.version, out_pref_net, selected_strains=selected_strains,
-            string_nets=string_nets, string_cutoff=f_settings.STRING_CUTOFF,
+            string_nets=opts.string_networks, string_cutoff=f_settings.STRING_CUTOFF,
             forcenet=False)
         # TODO organize this better
         W = (sparse_networks, network_names)
@@ -1137,10 +1189,10 @@ def run():
         opts.version, opts.exp_name,
         W, prots, ann_matrix, goids,
         #goid_pos, goid_neg, goterms, opts.net_file, opts.algorithm,
-        opts.algorithm, opts.weight_swsn,
+        algorithms=opts.algorithm, weight_swsn=opts.weight_swsn, 
         unweighted=opts.unweighted, ss_lambda=opts.sinksourceplus_lambda,
-        k_list=opts.k, t_list=opts.t, s_list=opts.s, a_list=opts.alpha,
-        eps_list=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
+        alpha=opts.alpha, eps=opts.eps, max_iters=opts.max_iters,
+        k_list=opts.k, t_list=opts.t, s_list=opts.s, epsUB_list=opts.epsUB, 
         rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos=opts.rank_pos, compare_ranks=opts.compare_ranks,
         num_pred_to_write=opts.num_pred_to_write, aptrank_data=aptrank_data,
         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
