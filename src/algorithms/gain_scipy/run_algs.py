@@ -23,6 +23,7 @@ import sinksource_ripple
 import sinksource_squeeze
 from aptrank.birgrank import birgRank
 import aptrank.run_birgrank as run_birgrank
+from aptrank.aptrank import AptRank
 #import pandas as pd
 import networkx as nx
 from scipy import sparse
@@ -44,6 +45,7 @@ ALGORITHMS = [
     "localplus",  # same as local-ovn, but with the option of using lambda and/or alpha
     "local",  # same as local-ova, but with the option of using lambda and/or alpha
     "birgrank",
+    "aptrank",
     "genemania",
     ]
 
@@ -69,7 +71,7 @@ class Alg_Runner:
             deltaUBLB_list=[None], epsUB_list=[0], 
             rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
             taxon=None, num_pred_to_write=100, 
-            aptrank_data=None, theta=.5, mu=.5,
+            aptrank_data=None, theta=.5, mu=.5, k=8, s=5, t=0.5, diff_type="twoway",
             only_cv=False, cross_validation_folds=None, 
             forcenet=False, forcealg=False, verbose=False, progress_bar=True):
         """
@@ -85,6 +87,7 @@ class Alg_Runner:
         if aptrank_data is not None:
             self.dag_matrix, self.pos_matrix, self.dag_goids = aptrank_data
         self.theta, self.mu = theta, mu
+        self.k, self.s, self.t, self.diff_type = k, s, t, diff_type
         self.algorithms = algorithms
         self.weight_swsn = weight_swsn
         self.unweighted = unweighted
@@ -149,6 +152,7 @@ class Alg_Runner:
         # organize the results by algorithm, then algorithm parameters, then GO term
         #params_results = {}
         for alg in self.algorithms:
+            print("starting running algo %s" % alg)
             self.out_dir = "%s/all/%s/%s" % (self.RESULTSPREFIX, alg, self.exp_name)
             utils.checkDir(self.out_dir)
 
@@ -175,7 +179,7 @@ class Alg_Runner:
 
             # "cross validation mode" is run if the user specifies --cross-validation-folds X
             if self.cross_validation_folds is not None:
-                if self.weight_swsn is True or alg == "birgrank":
+                if self.weight_swsn is True or alg == "birgrank" or alg=="aptrank":
                     self.run_cv_all_goterms(alg, folds=self.cross_validation_folds)
                 else:
                     out_pref = "%s/cv-%dfolds-%sl%d-" % (self.out_dir, self.cross_validation_folds,
@@ -229,6 +233,12 @@ class Alg_Runner:
                 str(alpha).replace('.','_'), str(theta).replace('.','_'),
                 str(mu).replace('.','_'))
             dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
+        elif alg == 'aptrank':
+            k, s, t, diff_type = self.k, self.s, self.t, self.diff_type
+            out_pref += 'a%s-t%s-m%s' % (
+                str(k).replace('.', '_'), str(s).replace('.', '_'),
+                str(t).replace('.', '_'))
+            dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
         utils.checkDir(os.path.dirname(out_pref))
 
         ann_matrix_folds = self.split_cv_all_goterms(folds=folds)
@@ -245,7 +255,7 @@ class Alg_Runner:
                     self.L = genemania.setup_laplacian(W)
 
             # run each algorithm on these folds
-            if alg == 'birgrank':
+            if alg == 'birgrank' or alg == 'aptrank':
                 # TODO the matrix for BirgRank and the train_matrix do not have the same goids. 
                 # I need to build a pos_mat with the train_matrix annotations
                 train_pos_mat = sparse.lil_matrix(self.pos_matrix.shape)
@@ -307,7 +317,9 @@ class Alg_Runner:
         for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
             goid = self.goids[i]
             positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
-            #print("%d positives, %d negatives for goterm %s" % (len(positives), len(negatives), goid))
+            if len(positives) < folds or len(negatives) < folds:
+                continue
+            # print("%d positives, %d negatives for goterm %s" % (len(positives), len(negatives), goid))
             kf = KFold(n_splits=folds, shuffle=True)
             kf_neg = KFold(n_splits=folds, shuffle=True)
             kf.get_n_splits(positives)
@@ -352,6 +364,11 @@ class Alg_Runner:
                         alpha=self.alpha, theta=self.theta, mu=self.mu, 
                         eps=self.eps, max_iters=self.max_iters,
                         nodes=nodes, verbose=self.verbose)
+            Xh = Xh.T
+        elif alg == 'aptrank':
+            runner = AptRank(self.P, pos_mat.transpose(), hierarchy_mat,
+                        K=self.k, S=self.s, T=self.t, NCores=12, diffusion_type=self.diff_type)
+            Xh = runner.algorithm()
             Xh = Xh.T
         else:
             print("alg %s not yet implemented." % (alg))
@@ -1055,6 +1072,17 @@ def parse_args(args):
                      help="BirgRank parameter: (1-mu) percent of random walkers diffuse from G via Rtrain to H")
     parser.add_option_group(group)
 
+    # aptrank options
+    group = OptionGroup(parser, 'AptRank options')
+    group.add_option('', '--apt_k', default=8,
+                     help="Markov Chain iterations")
+    group.add_option('', '--apt_s', default=5,
+                     help="Number of shuffles")
+    group.add_option('', '--apt_t', default=0.5,
+                     help="Split percentage")
+    group.add_option('', '--diff_type', default="twoway",
+                     help="Diffusion type: oneway or twoway")
+
     # parameters for STRING networks
     group = OptionGroup(parser, 'STRING options')
     group.add_option('', '--string-combined', action="store_true", default=False,
@@ -1179,12 +1207,14 @@ def run():
                              selected_species=None, taxon=None)
 
     # TODO make this more streamlined
-    aptrank_data = None 
-    if 'birgrank' in opts.algorithm:
+    aptrank_data = None
+    print("starting to run the algorithm") 
+    if 'birgrank' or 'aptrank' in opts.algorithm:
         dag_matrix, pos_matrix, dag_goids = run_birgrank.setup_h_ann_matrices(
                 prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
         aptrank_data = (dag_matrix, pos_matrix, dag_goids)
 
+    
     alg_runner = Alg_Runner(
         opts.version, opts.exp_name,
         W, prots, ann_matrix, goids,
@@ -1196,7 +1226,9 @@ def run():
         rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos=opts.rank_pos, compare_ranks=opts.compare_ranks,
         num_pred_to_write=opts.num_pred_to_write, aptrank_data=aptrank_data,
         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
+        k=opts.apt_k, s=opts.apt_s, t=opts.apt_t, diff_type=opts.diff_type,
         forcealg=opts.forcealg, forcenet=opts.forcenet, verbose=opts.verbose)
+    print("starting main function")
     alg_runner.main()
 
 #    ground_truth_pos = None 
