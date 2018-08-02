@@ -13,6 +13,7 @@ from sklearn.preprocessing import minmax_scale
 from deepNF_class import DeepNF
 import matplotlib.pyplot as plt
 
+__author__ = "Shuaicheng Zhang"
 
 def parse_args(args):
 
@@ -44,12 +45,14 @@ def parse_args(args):
                       help="sample size for trainning each iteration", default=128)
     parser.add_option("", "--ntrials", type='int',
                       help="number of cv trials", default=1)
-    parser.add_option("", "--alpha", type="int",
+    parser.add_option("", "--alpha", type="float",
                       help="propagation parameter", default=0.98)
     parser.add_option("", "--ker", default="lin",
                       help="a number 1-6 (see below)")
     parser.add_option("", "--select_arch",
-                      help="a number 1-6 (see below)")
+                      help="a selected arch of user's choice , ie [1200, 600, 1200]")
+    parser.add_option("", "--threshold", type="float",
+                      help="threshold for RWR to avoid too much RAM usage on computation", default=0.0001)
 
     # optional parameters
     parser.add_option("-k", "--topK", type='int',
@@ -168,7 +171,7 @@ def _scaleSimMat(A):
     return A
 
 
-def RWR(A, K=3, alpha=0.98):
+def RWR(A, threshold, K=3, alpha=0.98):
     """Random Walk on graph"""
     A = _scaleSimMat(A)
     # Random surfing
@@ -180,7 +183,7 @@ def RWR(A, K=3, alpha=0.98):
         print "Going for iteration %d" % (i+1)
         P = alpha*P.dot(A) + (1. - alpha)*P0
         temp = stat.describe(P.data)
-        indices_p = np.where(P.data < 0.001)
+        indices_p = np.where(P.data < threshold)
         P.data[indices_p] = 0
         P.eliminate_zeros()
         # temp2 = stat.describe(P.data)
@@ -264,7 +267,7 @@ def run():
         for i in range(0, len(Nets)):
             print()
             print("### Computing PPMI for network:%s" % i)
-            Nets[i] = RWR(Nets[i], alpha=opt.alpha)
+            Nets[i] = RWR(Nets[i], alpha=opt.alpha, threshold=opt.threshold)
             Nets[i] = PPMI_matrix(Nets[i])
             # print("### Writing output to file...")
             # fWrite = open('%s%s_%s_K3_alpha%d.mat' % (opt.results_path, opt.prefix, i, opt.alpha), 'wb')
