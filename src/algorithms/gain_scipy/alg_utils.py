@@ -365,26 +365,51 @@ def check_fixed_rankings(LBs, UBs, unranked_nodes, nodes_to_rank=None):
     # TODO use the epsUB parameter
     # find all of the nodes in the top-k whose rankings are fixed
     # nlogn comparisons
-    all_scores = [(n, 'LB', LBs[n]) for n in unranked_nodes]
-    all_scores += [(n, 'UB', UBs[n]) for n in unranked_nodes]
-    # sort first by the score, and then by the node name which will break ties
-    # TODO this is really slow at the start. 
-    # Maybe I could speed it up by starting with a random sampling of nodes, 
-    # and once those are ranked move up to all nodes
-    all_scores_sorted = sorted(all_scores, key=lambda x: (x[2], x[0]), reverse=True)
+    all_scores = []
+    for n in unranked_nodes:
+        all_scores.append((n, 'UB', UBs[n]))
+        all_scores.append((n, 'LB', LBs[n]))
+        #all_scores.append((n, LBs[n]))
     i = 0
+#    all_scores_sorted = sorted(all_scores, key=lambda x: (x[1]), reverse=True)
+#    not_fixed_nodes = set()
+#    if nodes_to_rank is None:
+#        # for every node, check if the next node's LB+UB > the curr node's LB.
+#        # If so, the node is not yet fixed
+#        while i+1 < len(all_scores_sorted):
+#            curr_LB = all_scores_sorted[i][1]
+#            curr_i = i
+#            while i+1 < len(all_scores_sorted) and \
+#                  curr_LB < UBs[all_scores_sorted[i+1][0]]:
+#                not_fixed_nodes.add(all_scores_sorted[i+1][0])
+#                i += 1
+#            if curr_i != i:
+#                not_fixed_nodes.add(all_scores_sorted[i][0])
+#            if curr_i == i:
+#                i += 1
+#            #    fixed_nodes.add(all_scores_sorted[i][0])
+#        fixed_nodes = unranked_nodes - not_fixed_nodes 
+    # sort first by the score, and then by the node name which will break ties
+    all_scores_sorted = sorted(all_scores, key=lambda x: (x[2], x[0]), reverse=True)
     fixed_nodes = set()
     if nodes_to_rank is None:
+        # for every index, check if the current index and the one after it have the same node id
+        # if they do, then that means the current node has a distinct UB and LB from all other nodes
+        # and therefore has a fixed ranking
         while i+1 < len(all_scores_sorted):
             if all_scores_sorted[i][0] == all_scores_sorted[i+1][0]:
-                # temp check
-                if all_scores_sorted[i][2] == 'LB':
-                    print("Warning: %s LB < UB: %s < %s" % (all_scores_sorted[i][0],
-                        all_scores_sorted[i][2], all_scores_sorted[i+1][2])) 
+                # temp check to see if the LB is ever greater than the UB
+                # haven't ever seen this occur
+                if all_scores_sorted[i][1] == 'LB':
+                    print("Warning: node %s LB > UB: %s > %s" % (all_scores_sorted[i][0],
+                        str(all_scores_sorted[i][2]), str(all_scores_sorted[i+1][2]))) 
                 fixed_nodes.add(all_scores_sorted[i][0])
                 i += 1
             i += 1
     else:
+        # TODO Update
+        print("not yet updated code. Quitting")
+        sys.exit()
         conflicting_nodes = set()
         conflicted_node = -1
         conflicts = False
