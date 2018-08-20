@@ -7,7 +7,8 @@ import alg_utils
 import numpy as np
 #mport gc
 from scipy.sparse import csr_matrix, eye
-from scipy.sparse.linalg import spsolve
+#from scipy.sparse.linalg import spsolve
+from scipy.sparse import linalg
 #import pdb
 
 
@@ -25,17 +26,13 @@ def SinkSource_scipy(P, f, max_iters=1000, delta=0.0001, a=0.8, scores={}, verbo
     prev_s = s.copy()
 
     start_time = time.time()
-    #for iters in trange(max_iters):
     for iters in range(1,max_iters+1):
-        # this uses way too much ram
-        #s = a*np.dot(A,prev_s) + f
         s = a*csr_matrix.dot(P, prev_s) + f
 
         # TODO store this in a list and return it
         max_d = (s - prev_s).max()
         if verbose:
             print("\t\tmax score change: %0.6f" % (max_d))
-        #tqdm.write("\t\tmax score change: %0.6f" % (max_d))
         if max_d < delta:
             # converged!
             break
@@ -71,12 +68,17 @@ def runSinkSource(P, positives, negatives=None, max_iters=1000, delta=0.0001, a=
     if max_iters > 0:
         s, total_time, iters, comp = SinkSource_scipy(P, f, max_iters=max_iters, delta=delta, a=a, scores=scores)
     else:
-        start_time = time.process_time()
         # try solving for s directly
         A = eye(P.shape[0]) - a*P
-        s = spsolve(A, f)
-        total_time = time.process_time() - start_time
-        print("Solved SS using sparse linear system (%0.2f sec)" % (total_time))
+        # spsolve basically stalls for denser networks (e-value cutoff 0.1)
+        #start_time = time.process_time()
+        #s = spsolve(A, f)
+        #print("Solved SS using spsolve (%0.3f sec)" % (time.process_time() - start_time))
+        start_time = time.process_time()
+        # cg (conjugate gradient) is the fastest of the other available solvers
+        s, info = linalg.cg(A, f)
+        print("Solved SS using cg (%0.3f sec)" % (time.process_time() - start_time))
+        total_time = time.process_time() - start_time 
         iters = 0
         comp = 0
 
