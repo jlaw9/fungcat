@@ -17,6 +17,7 @@ import algorithms.setup_sparse_networks as setup
 import algorithms.aptrank.run_birgrank as run_birgrank
 from scipy import sparse
 import numpy as np
+import pdb
 
 
 def parse_args(args):
@@ -56,8 +57,6 @@ def parse_args(args):
 
     # parameters for running algorithms
     group = OptionGroup(parser, 'Algorithm options')
-    group.add_option('', '--weight-swsn', action="store_true", default=False,
-                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
     group.add_option('', '--unweighted', action="store_true", default=False,
                      help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
     group.add_option('-l', '--sinksourceplus-lambda', type=float, 
@@ -86,6 +85,10 @@ def parse_args(args):
 
     # parameters for STRING networks
     group = OptionGroup(parser, 'STRING options')
+    group.add_option('', '--weight-per-goterm', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the original GeneMANIA method where networks are weighted individually for each GO term. Only takes effect if multiple networks are present for the specified version. Must specify either this or --unweighted or --weight-swsn.")
+    group.add_option('', '--weight-swsn', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
     group.add_option('', '--string-combined', action="store_true", default=False,
             help="Use only the STRING combined network: \n\tcombined_score")
     group.add_option('', '--string-core', action="store_true", default=False,
@@ -142,6 +145,10 @@ def parse_args(args):
             print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(run_algs.ALGORITHMS)))
             sys.exit(1)
 
+    if opts.keep_ann and opts.pos_neg_file_eval is None:
+        print("ERROR: Must specify a --pos-neg-file-eval to use the --keep-ann option")
+        sys.exit(1)
+
     opts.k = opts.k if opts.k is not None else [200]
     opts.t = opts.t if opts.t is not None else [2]
     opts.s = opts.s if opts.s is not None else [200]
@@ -170,16 +177,30 @@ def parse_args(args):
         string_networks = setup.CORE_STRING_NETWORKS
     opts.string_networks = string_networks
 
+    if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version]: 
+        if not opts.weight_per_goterm and not opts.weight_swsn and not opts.unweighted:
+            print("ERROR: must specify either --weight-per-goterm, --weight-swsn or --unweighted")
+            sys.exit(1)
+        if opts.weight_per_goterm and opts.weight_swsn:
+            print("ERROR: cannot specify both --weight-per-goterm and --weight-swsn")
+            sys.exit(1)
+    else:
+        if opts.weight_per_goterm or opts.weight_swsn:
+            print("ERROR: version %s doesn't have any multiple networks. " + \
+                  "To use the --weight-per-goterm or --weight-swsn options, please choose a version with STRING or update fungcat_settings.py")
+            sys.exit(1)
+
     return opts
 
 
 def main(version, exp_name, W, prots, ann_matrix, goids,
-         algorithms, opts, taxons=None, dag_matrix=None,
-         eval_ann_matrix=None):
+         algorithms, opts, taxons=None, eval_ann_matrix=None):
     """
     *W*: If using STRING networks, then W should be a tuple containing
         a list of all STRING sparse matrices to use when weighting (SWSN)
         a list of the names of the STRING networks
+    *eval_ann_matrix*: matrix with the same data as *ann_matrix*, except 
+        it will only be used for evaluation
     """
     # option to use negative examples when evaluating predictions
     #use_negatives_for_eval = True 
@@ -193,11 +214,11 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
         exp_name += "-keep-ann" 
 
     # TODO make this more streamlined
+    aptrank_data = None 
     if 'birgrank' in algorithms:
         dag_matrix, pos_matrix, dag_goids = run_birgrank.setup_h_ann_matrices(
                 prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
-    if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
-        sparse_networks, net_names = W
+        aptrank_data = (dag_matrix, pos_matrix, dag_goids)
 
     # set the version
     # selected species
@@ -221,11 +242,16 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
 
     for alg in algorithms:
         # TODO add other options to the output file 
-        out_file = "%s/all/%s/%s/ground-truth-%sl%d-a%s.txt" % (
+        out_file = "%s/all/%s/%s/ground-truth-%s%s%sl%d-%sa%s.txt" % (
             RESULTSPREFIX, alg, exp_name,
             'unw-' if opts.unweighted else '', 
+            'goterm-weight-' if opts.weight_per_goterm else '',
+            'swsn-' if opts.weight_swsn else '',
             0 if opts.sinksourceplus_lambda is None else opts.sinksourceplus_lambda,
-            str(opts.alpha).replace('.', '_'))
+            'a%s-t%s-m%s' % (str(opts.alpha).replace('.','_'), str(opts.theta).replace('.','_'),
+                             str(opts.mu).replace('.','_')) if alg == 'birgrank' else '',
+            str(opts.alpha).replace('.', '_'),
+        )
 
         if os.path.isfile(out_file) and opts.forcealg:
             if len(taxons) > 1: 
@@ -238,6 +264,17 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
         elif opts.only_pred is False:
             print("Writing results to %s" % (out_file))
 
+    # convert the annotation matrix to a lil matrix
+    ann_matrix = ann_matrix.tolil()
+    if eval_ann_matrix is not None:
+        eval_ann_matrix = eval_ann_matrix.tolil()
+
+    if opts.keep_ann:
+        print("\nRunning algs with all annotations in the --pos-neg-file and evaluating based on the annotations in the --pos-neg-file-eval.")
+        print("\tleave-one-species-out will be run after")
+        run_and_eval_algs(version, exp_name, W, prots, goids,
+                          algorithms, opts, ann_matrix, eval_ann_matrix,
+                          taxons=taxons, aptrank_data=aptrank_data, s='all')
     # split the sets of positives/negatives into 19 sets with one species left out of each
     for s in tqdm(sorted(taxons)):
         tqdm.write("\n" + "-"*30)
@@ -245,147 +282,178 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
         #print("Taxon: %s - %s; %d/%d goterms with > 0 annotations" % (
         tqdm.write("Taxon: %s - %s" % (
             s, selected_species[s]))
-        # leave this taxon out by removing its annotations
-        # rather than a dictionary, build a matrix
-        # convert the annotation matrix to a lil matrix
-        ann_matrix = ann_matrix.tolil()
-        if eval_ann_matrix is not None:
-            eval_ann_matrix = eval_ann_matrix.tolil()
-        train_ann_mat = sparse.lil_matrix(ann_matrix.shape, dtype=np.float)
-        test_ann_mat = sparse.lil_matrix(ann_matrix.shape, dtype=np.float)
-        sp_goterms = []
-        for i in range(len(goids)):
-            pos, neg = alg_utils.get_goid_pos_neg(ann_matrix, i)
-            ann_pos = set(list(pos))
-            ann_neg = set(list(neg))
-            # first setup the training annotations (those used as positives/negatives for the algorithm)
-            if opts.keep_ann:
-                train_pos = ann_pos 
-                train_neg = ann_neg 
-            else:
-                train_pos = ann_pos - species_to_uniprot_idx[s]
-                train_neg = ann_neg - species_to_uniprot_idx[s]
-            eval_pos = ann_pos.copy()
-            eval_neg = ann_neg.copy()
-            # setup the testing annotations (those used when evaluating the performance
-            if eval_ann_matrix is not None:
-                eval_pos, eval_neg = alg_utils.get_goid_pos_neg(eval_ann_matrix, i)
-                eval_pos = set(list(eval_pos))
-                eval_neg = set(list(eval_neg))
-            # TODO I should limit these to the proteins in the network
-            test_pos = eval_pos & species_to_uniprot_idx[s]
-            # UPDATE 2018-06-27: Only evaluate the species prots as negatives, not all prots
-            if opts.non_pos_as_neg_eval:
-                test_neg = species_to_uniprot_idx[s] - eval_pos
-                test_neg.discard(None)
-                #test_neg = np.asarray(sorted(test_neg)).astype(int)
-            else:
-                test_neg = eval_neg & species_to_uniprot_idx[s]
-            # UPDATE 2018-06-30: Remove test positives/negatives that are part of the training positives/negatives
-            # don't remove test positives if its a training negative because not all algorithms use negatives
-            test_pos -= train_pos 
-            test_neg -= train_pos | train_neg 
-            if len(train_pos) == 0 or len(test_pos) == 0 or \
-               (len(train_neg) == 0 or len(test_neg) == 0):
-                continue
-            sp_goterms.append(i) 
-            # build an array of the scores and set it in the goid sparse matrix of scores
-            pos_neg_arr = np.zeros(len(prots))
-            pos_neg_arr[list(train_pos)] = 1
-            pos_neg_arr[list(train_neg)] = -1
-            train_ann_mat[i] = pos_neg_arr
-            pos_neg_arr = np.zeros(len(prots))
-            pos_neg_arr[list(test_pos)] = 1
-            pos_neg_arr[list(test_neg)] = -1
-            test_ann_mat[i] = pos_neg_arr
+
+        train_ann_mat, test_ann_mat, sp_goterms = leave_out_taxon(
+            s, ann_matrix, goids, prots, species_to_uniprot_idx,
+            eval_ann_matrix=eval_ann_matrix, keep_ann=opts.keep_ann,
+            non_pos_as_neg_eval=opts.non_pos_as_neg_eval)
 
         tqdm.write("\t%d/%d goterms with > 0 annotations" % (len(sp_goterms), len(goids)))
-
-        if 'birgrank' in algorithms:
-            # TODO the matrix for BirgRank and the train_matrix do not have the same goids. 
-            # I need to build a pos_mat with the train_matrix annotations
-            train_pos_mat = sparse.lil_matrix(pos_matrix.shape)
-            dag_goids2idx = {g: i for i, g in enumerate(dag_goids)}
-            for i in range(len(goids)):
-                dag_goid_idx = dag_goids2idx[goids[i]]
-                train_pos_mat[dag_goid_idx] = train_ann_mat[i]
-            # now set the negatives to 0 as birgrank doesn't use negatives
-            train_pos_mat[train_pos_mat < 0] = 0
-            # not needed for lil matrix
-            #train_pos_mat.eliminate_zeros() 
-
-        if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] \
-                and opts.weight_swsn:
-            # use the simultaneous weighting method to weight the networks
-            out_file = "inputs/%s/%s/%d-nets-combined-SWSN-leave-out-%s.npz" % (
-                version, exp_name, len(sparse_networks), s)
-            if os.path.isfile(out_file):
-                print("Loading SWSN weighted network from %s" % (out_file))
-                W = sparse.load_npz(out_file)
-            else:
-                W = setup.weight_SWSN(train_ann_mat, sparse_networks,
-                        net_names=net_names, out_file=out_file, nodes=prots)
-
         if len(sp_goterms) == 0:
             print("\tskipping")
             continue
 
-        if opts.keep_ann:
-            print("Keep all annotations when making predictions")
-        if opts.only_pred:
-            print("Making predictions only and writing %d to a file" % (opts.num_pred_to_write))
-            test_ann_mat = None
-        elif opts.non_pos_as_neg_eval is True: 
-            print("Evaluating using all non-ground-truth positives for the taxon as false positives")
+        run_and_eval_algs(version, exp_name, W, prots, goids,
+                          algorithms, opts, train_ann_mat, test_ann_mat,
+                          taxons=taxons, aptrank_data=aptrank_data, s=s)
+
+
+def run_and_eval_algs(
+        version, exp_name, W, prots, goids,
+        algorithms, opts, train_ann_mat, test_ann_mat,
+        taxons=None, aptrank_data=None, s="all"):
+
+    if 'birgrank' in algorithms:
+        dag_matrix, pos_matrix, dag_goids = aptrank_data 
+        # TODO the matrix for BirgRank and the train_matrix do not have the same goids. 
+        # I need to build a pos_mat with the train_matrix annotations
+        train_pos_mat = sparse.lil_matrix(pos_matrix.shape)
+        dag_goids2idx = {g: i for i, g in enumerate(dag_goids)}
+        for i in range(len(goids)):
+            dag_goid_idx = dag_goids2idx[goids[i]]
+            train_pos_mat[dag_goid_idx] = train_ann_mat[i]
+        # now set the negatives to 0 as birgrank doesn't use negatives
+        train_pos_mat[train_pos_mat < 0] = 0
+        # not needed for lil matrix
+        #train_pos_mat.eliminate_zeros() 
+        # Also, speed-up birgrank by only getting the scores for the nodes that will be evaluated (a positive or negative for at least 1 GO term)
+        test_nodes = set()
+        for i in range(len(goids)):
+            test_nodes.update(set(list(test_ann_mat[i].nonzero()[1])))
+
+    #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
+    if opts.weight_swsn:
+        # use the simultaneous weighting method to weight the networks
+        sparse_networks, net_names = W
+        # commented out the out_file as there is no need to keep storing them
+        #out_file = "inputs/%s/%s/%d-nets-combined-SWSN-leave-out-%s.npz" % (
+        #    version, exp_name, len(sparse_networks), s)
+        #if os.path.isfile(out_file):
+        #    print("Loading SWSN weighted network from %s" % (out_file))
+        #    W = sparse.load_npz(out_file)
+        #else:
+        W = setup.weight_SWSN(train_ann_mat, sparse_networks,
+                net_names=net_names, nodes=prots)
+                #net_names=net_names, out_file=out_file, nodes=prots)
+
+    if opts.keep_ann:
+        print("Keeping all annotations when making predictions")
+    if opts.only_pred:
+        print("Making predictions only and writing %d to a file" % (opts.num_pred_to_write))
+        test_ann_mat = None
+    elif opts.non_pos_as_neg_eval is True: 
+        print("Evaluating using all non-ground-truth positives for the taxon as false positives")
+    else:
+        print("Evaluating using only the ground-truth negatives predicted as positives as false positives")
+
+    for alg in algorithms:
+        # for now, use most of the defaults
+        # change to running sinksource with 25 iterations
+        # leave alpha at default 0.8
+        alg_runner = run_algs.Alg_Runner(
+            version, exp_name, W, prots, train_ann_mat, goids,
+            algorithms=[alg], weight_swsn=False, weight_per_goterm=opts.weight_per_goterm, unweighted=opts.unweighted,
+            ss_lambda=opts.sinksourceplus_lambda,
+            eps=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
+            k_list=opts.k, t_list=opts.t, s_list=opts.s, 
+            alpha=opts.alpha, theta=opts.theta, mu=opts.mu,
+            num_pred_to_write=opts.num_pred_to_write, verbose=opts.verbose, 
+            forcealg=opts.forcealg, progress_bar=False)
+        if alg == 'birgrank':
+            # the W matrix is already normalized, so I can run birgrank/aptrank from here
+            goid_scores = alg_runner.run_aptrank_with_params(
+                train_pos_mat, dag_matrix, alg=alg, nodes=test_nodes) 
+            curr_goids = dag_goids.copy() 
         else:
-            print("Evaluating using only the ground-truth negatives predicted as positives as false positives")
+            curr_goids = goids.copy()
+            goid_scores = alg_runner.main()
 
-        for alg in algorithms:
-            # for now, use most of the defaults
-            # change to running sinksource with 25 iterations
-            # leave alpha at default 0.8
-            alg_runner = run_algs.Alg_Runner(
-                version, exp_name, W, prots, train_ann_mat, goids,
-                algorithms=[alg], weight_swsn=opts.weight_swsn, unweighted=opts.unweighted,
-                ss_lambda=opts.sinksourceplus_lambda,
-                eps=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
-                k_list=opts.k, t_list=opts.t, s_list=opts.s, 
-                alpha=opts.alpha, theta=opts.theta, mu=opts.mu,
-                num_pred_to_write=opts.num_pred_to_write, verbose=opts.verbose, 
-                forcealg=opts.forcealg, progress_bar=False)
-            if alg == 'birgrank':
-                # the W matrix is already normalized, so I can run
-                # birgrank/aptrank from here
-                goid_scores = alg_runner.run_aptrank_with_params(
-                    train_pos_mat, dag_matrix, alg=alg) 
-                curr_goids = dag_goids.copy() 
-            else:
-                curr_goids = goids.copy()
-                goid_scores = alg_runner.main()
+        # now evaluate 
+        out_dir = "outputs/%s/all/%s/%s/" % (version, alg, exp_name)
 
-            # now evaluate 
-            out_dir = "outputs/%s/all/%s/%s/" % (version, alg, exp_name)
+        # this will write an file containing the fmax for each goterm 
+        # with the taxon name in the name of the file
+        write_prec_rec = False 
+        if len(taxons) == 1:
+            print("Also writing prec/rec stats")
+            write_prec_rec = True 
+            out_dir += "goids/"
 
-            # this will write an file containing the fmax for each goterm 
-            # with the taxon name in the name of the file
-            write_prec_rec = False 
-            if len(taxons) == 1:
-                print("Also writing prec/rec stats")
-                write_prec_rec = True 
-                out_dir += "goids/"
+        utils.checkDir(out_dir)
+        out_pref = "%s/%sground-truth-%s%s%sl%d-" % (
+            out_dir, "all-sp-" if s=='all' else '',
+            'unw-' if opts.unweighted else '',
+            'goterm-weight-' if opts.weight_per_goterm else '',
+            'swsn-' if opts.weight_swsn else '',
+            0 if alg_runner.ss_lambda is None else int(alg_runner.ss_lambda))
+        if alg == 'birgrank':
+            out_pref += 'a%s-t%s-m%s' % (
+                str(opts.alpha).replace('.','_'), str(opts.theta).replace('.','_'),
+                str(opts.mu).replace('.','_'))
+        alg_runner.evaluate_ground_truth(
+            goid_scores, curr_goids, test_ann_mat, out_pref,
+            #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
+            taxon=s, write_prec_rec=write_prec_rec, 
+            append=True if s != 'all' else False)
 
-            utils.checkDir(out_dir)
-            out_pref = "%s/ground-truth-%sl%d-" % (
-                out_dir, 'unw-' if opts.unweighted else '',
-                0 if alg_runner.ss_lambda is None else int(alg_runner.ss_lambda))
-            if alg == 'birgrank':
-                out_pref += 'a%s-t%s-m%s' % (
-                    str(opts.alpha).replace('.','_'), str(opts.theta).replace('.','_'),
-                    str(opts.mu).replace('.','_'))
-            alg_runner.evaluate_ground_truth(
-                goid_scores, curr_goids, test_ann_mat, out_pref,
-                #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
-                taxon=s, write_prec_rec=write_prec_rec)
+
+def leave_out_taxon(s, ann_matrix, goids, prots, species_to_uniprot_idx,
+                    eval_ann_matrix=None, keep_ann=False, non_pos_as_neg_eval=False):
+    """
+    *ann_matrix*: should be a lil matrix
+    *eval_ann_matrix*: should be a lil matrix
+    """
+    # leave this taxon out by removing its annotations
+    # rather than a dictionary, build a matrix
+    train_ann_mat = sparse.lil_matrix(ann_matrix.shape, dtype=np.float)
+    test_ann_mat = sparse.lil_matrix(ann_matrix.shape, dtype=np.float)
+    sp_goterms = []
+    for i in range(len(goids)):
+        pos, neg = alg_utils.get_goid_pos_neg(ann_matrix, i)
+        ann_pos = set(list(pos))
+        ann_neg = set(list(neg))
+        # first setup the training annotations (those used as positives/negatives for the algorithm)
+        if keep_ann:
+            train_pos = ann_pos 
+            train_neg = ann_neg 
+        else:
+            train_pos = ann_pos - species_to_uniprot_idx[s]
+            train_neg = ann_neg - species_to_uniprot_idx[s]
+        eval_pos = ann_pos.copy()
+        eval_neg = ann_neg.copy()
+        # setup the testing annotations (those used when evaluating the performance
+        if eval_ann_matrix is not None:
+            eval_pos, eval_neg = alg_utils.get_goid_pos_neg(eval_ann_matrix, i)
+            eval_pos = set(list(eval_pos))
+            eval_neg = set(list(eval_neg))
+        # TODO I should limit these to the proteins in the network
+        test_pos = eval_pos & species_to_uniprot_idx[s]
+        # UPDATE 2018-06-27: Only evaluate the species prots as negatives, not all prots
+        if non_pos_as_neg_eval:
+            test_neg = species_to_uniprot_idx[s] - eval_pos
+            test_neg.discard(None)
+            #test_neg = np.asarray(sorted(test_neg)).astype(int)
+        else:
+            test_neg = eval_neg & species_to_uniprot_idx[s]
+        # UPDATE 2018-06-30: Remove test positives/negatives that are part of the training positives/negatives
+        # don't remove test positives if its a training negative because not all algorithms use negatives
+        test_pos -= train_pos 
+        test_neg -= train_pos | train_neg 
+        if len(train_pos) == 0 or len(test_pos) == 0 or \
+           (len(train_neg) == 0 or len(test_neg) == 0):
+            continue
+        sp_goterms.append(i) 
+        # build an array of the scores and set it in the goid sparse matrix of scores
+        pos_neg_arr = np.zeros(len(prots))
+        pos_neg_arr[list(train_pos)] = 1
+        pos_neg_arr[list(train_neg)] = -1
+        train_ann_mat[i] = pos_neg_arr
+        pos_neg_arr = np.zeros(len(prots))
+        pos_neg_arr[list(test_pos)] = 1
+        pos_neg_arr[list(test_neg)] = -1
+        test_ann_mat[i] = pos_neg_arr
+
+    return train_ann_mat, test_ann_mat, sp_goterms
 
 
 def run():
@@ -404,13 +472,14 @@ def run():
     INPUTSPREFIX, _, net_file, selected_strains = f_settings.set_version(opts.version) 
     # TODO this should be better organized so that any STRING networks
     # can be used
-    if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
+    #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
+    if opts.weight_swsn or opts.weight_per_goterm:
         out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
         utils.checkDir(out_pref_net)
         # build the file containing the sparse networks
         sparse_networks, network_names, prots = setup.create_sparse_net_file(
             opts.version, out_pref_net, selected_strains=selected_strains,
-            string_nets=opts.string_networks, string_cutoff=f_settings.STRING_CUTOFF,
+            string_nets=opts.string_networks, string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
             forcenet=False)
         # TODO organize this better
         W = (sparse_networks, network_names)
