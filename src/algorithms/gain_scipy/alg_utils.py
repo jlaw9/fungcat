@@ -6,8 +6,14 @@ import numpy as np
 import networkx as nx
 from collections import defaultdict
 import time
+from tqdm import tqdm
 sys.path.append("src")
 import utils.file_utils as utils
+# needed for evaluation metrics
+#try:
+from sklearn import metrics
+#except ImportError:
+#    pass
 
 
 def select_goterms(only_functions_file=None, goterms=None):
@@ -150,42 +156,71 @@ def setup_sparse_network(network_file, node2idx_file=None, forced=False):
     if forced is False and (os.path.isfile(sparse_net_file) and os.path.isfile(node2idx_file)):
         print("Reading network from %s" % (sparse_net_file))
         W = sparse.load_npz(sparse_net_file)
-        print("\t%d nodes and %d edges" % (W.shape[0], len(W.data)))
+        print("\t%d nodes and %d edges" % (W.shape[0], len(W.data)/2))
         print("Reading node names from %s" % (node2idx_file))
         node2idx = {n: int(n2) for n, n2 in utils.readColumns(node2idx_file, 1, 2)}
         idx2node = {n2: n for n, n2 in node2idx.items()}
-        nodes_ids = sorted(idx2node)
+        prots = [idx2node[n] for n in sorted(idx2node)]
     elif os.path.isfile(network_file):
         print("Reading network from %s" % (network_file))
-        G = nx.Graph()
+#        G = nx.Graph()
+#        with open(network_file, 'r') as f:
+#            for line in f:
+#                if line[0] == "#":
+#                    continue
+#                u,v,w = line.rstrip().split('\t')[:3]
+#                G.add_edge(u,v,weight=float(w))
+#                #edges[(u,v)] = float(w)
+#                #nodes.update(set([u,v]))
+#        print("\t%d nodes and %d edges" % (G.number_of_nodes(), G.number_of_edges()))
+#
+#        print("\trelabeling node IDs with integers")
+#        G, node2idx, idx2node = convert_nodes_to_int(G)
+#        print("\twriting node2idx labels to %s" % (node2idx_file))
+#        nodes_ids = sorted(idx2node)
+#        with open(node2idx_file, 'w') as out:
+#            out.write(''.join(["%s\t%s\n" % (idx2node[n], n) for n in nodes_ids]))
+#
+#        print("\tconverting to a scipy sparse matrix")
+#        W = nx.to_scipy_sparse_matrix(G, nodelist=nodes_ids)
+        # load the first three columns into vectors
+        #u, v, val = np.loadtxt(filename).T[:3]
+        u,v,w = [], [], []
+        # TODO make sure the network is symmetrical
         with open(network_file, 'r') as f:
-            for line in f:
-                if line[0] == "#":
-                    continue
-                u,v,w = line.rstrip().split('\t')[:3]
-                G.add_edge(u,v,weight=float(w))
-                #edges[(u,v)] = float(w)
-                #nodes.update(set([u,v]))
-        print("\t%d nodes and %d edges" % (G.number_of_nodes(), G.number_of_edges()))
-
-        print("\trelabeling node IDs with integers")
-        G, node2idx, idx2node = convert_nodes_to_int(G)
-        print("\twriting node2idx labels to %s" % (node2idx_file))
-        nodes_ids = sorted(idx2node)
-        with open(node2idx_file, 'w') as out:
-            out.write(''.join(["%s\t%s\n" % (idx2node[n], n) for n in nodes_ids]))
-
-        print("\tconverting to a scipy sparse matrix")
-        W = nx.to_scipy_sparse_matrix(G, nodelist=nodes_ids)
+            # add tqdm?
+            for line in tqdm(f, total=120000000):
+                line = line.rstrip().split('\t')
+                u.append(line[0])
+                v.append(line[1])
+                w.append(float(line[2]))
+        print("\tconverting uniprot ids to node indexes / ids")
+        # first convert the uniprot ids to node indexes / ids
+        prots = sorted(set(list(u)) | set(list(v)))
+        node2idx = {prot: i for i, prot in enumerate(prots)}
+        i = [node2idx[n] for n in u]
+        j = [node2idx[n] for n in v]
+        print("\tcreating sparse matrix")
+        #print(i,j,w)
+        W = sparse.coo_matrix((w, (i, j)), shape=(len(prots), len(prots))).tocsr()
+        # make sure it is symmetric
+        if (W.T != W).nnz == 0:
+            pass
+        else:
+            print("### Matrix not symmetric!")
+            W = W + W.T
+            print("### Matrix converted to symmetric.")
+        #name = os.path.basename(net_file)
         print("\twriting sparse matrix to %s" % (sparse_net_file))
         sparse.save_npz(sparse_net_file, W)
+        print("\twriting node2idx labels to %s" % (node2idx_file))
+        with open(node2idx_file, 'w') as out:
+            out.write(''.join(["%s\t%d\n" % (prot,i) for i, prot in enumerate(prots)]))
     else:
         print("Network %s not found. Quitting" % (network_file))
         sys.exit(1)
 
-    nodes = [idx2node[n] for n in nodes_ids]
-
-    return W, nodes
+    return W, prots
 
 
 def normalizeGraphEdgeWeights(W, ss_lambda=None, axis=1):
@@ -196,11 +231,14 @@ def normalizeGraphEdgeWeights(W, ss_lambda=None, axis=1):
     """
     # normalize the matrix
     # by dividing every edge by the node's degree (row sum)
+    deg = np.asarray(W.sum(axis=axis)).flatten()
     if ss_lambda is None:
-        P = W.multiply(csr_matrix(1/W.sum(axis=axis).astype(float)))
+        deg = np.divide(1., deg)
     else:
-        P = W.multiply(csr_matrix(1/(ss_lambda+W.sum(axis=axis).astype(float))))
-    return P
+        deg = np.divide(1., ss_lambda + deg)
+    deg[np.isinf(deg)] = 0
+    P = W.multiply(deg)
+    return P.asformat(W.getformat())
     # this gives a memory error likely because it first converts the matrix to a numpy matrix
     #return W / W.sum(axis=1)
 
@@ -230,8 +268,9 @@ def get_goid_pos_neg(ann_matrix, i):
     #goid_ann = ann_matrix[i,:].toarray().flatten()
     #positives = np.where(goid_ann > 0)[0]
     #negatives = np.where(goid_ann < 0)[0]
-    # may be faster with a lil matrix
-    goid_ann = ann_matrix.getrowview(i)
+    # may be faster with a lil matrix, but takes a lot more RAM
+    #goid_ann = ann_matrix.getrowview(i)
+    goid_ann = ann_matrix[i,:]
     positives = (goid_ann > 0).nonzero()[1]
     negatives = (goid_ann < 0).nonzero()[1]
     return positives, negatives
@@ -354,103 +393,125 @@ def build_index_map(nodes, nodes_to_remove):
 #    return reachable_nodes
 
 
-def check_fixed_rankings(LBs, UBs, unranked_nodes, nodes_to_rank=None):
+def check_fixed_rankings(LBs, UBs, unranked_nodes=None, unr_pos_nodes=None, unr_neg_nodes=None):
     """
     *nodes_to_rank*: a set of nodes for which to check which nodes have an overlapping UB/LB.
         In other words, get the nodes that are causing the given set of nodes to not have their ranks fixed
+    UPDATE: 
+    *unr_pos_nodes*: set of positive nodes that are not fixed. 
+        only need to check for overlap with negative nodes 
+    *unr_neg_nodes*: set of negative nodes that are not fixed. 
+        only need to check for overlap with positive nodes
     """
-    # Create two lists to sort.
-    # One with the string "LB" and one with the string "UB".
-    # Combine both lists. If for each node the 'LB' and 'UB' strings are next to each other, then the nodes rank is fixed
     # TODO use the epsUB parameter
     # find all of the nodes in the top-k whose rankings are fixed
-    # nlogn comparisons
+    # n comparisons
     all_scores = []
-    for n in unranked_nodes:
-        all_scores.append((n, 'UB', UBs[n]))
-        all_scores.append((n, 'LB', LBs[n]))
-        #all_scores.append((n, LBs[n]))
+    # also keep track of the # of nodes in a row that have overlapping upper or lower bounds
+    # for now just keep track of the biggest
+    max_unranked_stretch = 0
     i = 0
-#    all_scores_sorted = sorted(all_scores, key=lambda x: (x[1]), reverse=True)
-#    not_fixed_nodes = set()
-#    if nodes_to_rank is None:
-#        # for every node, check if the next node's LB+UB > the curr node's LB.
-#        # If so, the node is not yet fixed
-#        while i+1 < len(all_scores_sorted):
-#            curr_LB = all_scores_sorted[i][1]
-#            curr_i = i
-#            while i+1 < len(all_scores_sorted) and \
-#                  curr_LB < UBs[all_scores_sorted[i+1][0]]:
-#                not_fixed_nodes.add(all_scores_sorted[i+1][0])
-#                i += 1
-#            if curr_i != i:
-#                not_fixed_nodes.add(all_scores_sorted[i][0])
-#            if curr_i == i:
-#                i += 1
-#            #    fixed_nodes.add(all_scores_sorted[i][0])
-#        fixed_nodes = unranked_nodes - not_fixed_nodes 
-    # sort first by the score, and then by the node name which will break ties
-    all_scores_sorted = sorted(all_scores, key=lambda x: (x[2], x[0]), reverse=True)
-    fixed_nodes = set()
-    if nodes_to_rank is None:
-        # for every index, check if the current index and the one after it have the same node id
-        # if they do, then that means the current node has a distinct UB and LB from all other nodes
-        # and therefore has a fixed ranking
+    if unranked_nodes is not None:
+        for n in unranked_nodes:
+            all_scores.append((n, LBs[n]))
+        all_scores_sorted = sorted(all_scores, key=lambda x: (x[1]), reverse=True)
+        # the fixed nodes are the nodes that are not in the 
+        # "still not fixed" set
+        still_not_fixed_nodes = set()
+        # for every node, check if the next node's LB+UB > the curr node's LB.
+        # If so, the node is not yet fixed
         while i+1 < len(all_scores_sorted):
-            if all_scores_sorted[i][0] == all_scores_sorted[i+1][0]:
-                # temp check to see if the LB is ever greater than the UB
-                # haven't ever seen this occur
-                if all_scores_sorted[i][1] == 'LB':
-                    print("Warning: node %s LB > UB: %s > %s" % (all_scores_sorted[i][0],
-                        str(all_scores_sorted[i][2]), str(all_scores_sorted[i+1][2]))) 
-                fixed_nodes.add(all_scores_sorted[i][0])
+            curr_LB = all_scores_sorted[i][1]
+            curr_i = i
+            while i+1 < len(all_scores_sorted) and \
+                curr_LB < UBs[all_scores_sorted[i+1][0]]:
+                still_not_fixed_nodes.add(all_scores_sorted[i+1][0])
+                #print("i+1: %d not fixed" % (i+1))
                 i += 1
-            i += 1
+            if curr_i != i:
+                #print("i: %d not fixed" % (curr_i))
+                still_not_fixed_nodes.add(all_scores_sorted[curr_i][0])
+                if i - curr_i > max_unranked_stretch:
+                    max_unranked_stretch = i - curr_i
+            if curr_i == i:
+                i += 1
+            #    fixed_nodes.add(all_scores_sorted[i][0])
+        return still_not_fixed_nodes, max_unranked_stretch
+    elif unr_pos_nodes is not None and unr_neg_nodes is not None:
+        # if there aren't any nodes to check their ranking, then simply return
+        if len(unr_pos_nodes) == 0 or len(unr_neg_nodes) == 0:
+            return set(), set()
+        for n in unr_pos_nodes:
+            all_scores.append((n, LBs[n]))
+        for n in unr_neg_nodes:
+            all_scores.append((n, LBs[n]))
+        all_scores_sorted = sorted(all_scores, key=lambda x: (x[1]), reverse=True)
+        fixed_nodes = unr_pos_nodes | unr_neg_nodes
+        # for every node, check if the next node's LB+UB > the curr node's LB.
+        # and if one of the overlapping nodes is opposite 
+        # If so, the node is not yet fixed
+        curr_node = all_scores_sorted[0][0]
+        opp_set_pos = False if curr_node in unr_pos_nodes else True
+        opp_set = unr_pos_nodes if opp_set_pos else unr_neg_nodes
+        while i+1 < len(all_scores_sorted):
+            curr_node = all_scores_sorted[i][0]
+            curr_LB = all_scores_sorted[i][1]
+            # if this is a positive, just check the negatives
+            # and vice versa
+            curr_i = i
+            opp_overlap = False 
+            last_opp_node = None
+            while i+1 < len(all_scores_sorted) and \
+                curr_LB < UBs[all_scores_sorted[i+1][0]]:
+                next_node = all_scores_sorted[i+1][0]
+                if next_node in opp_set:
+                    opp_overlap = True
+                    last_opp_node = i+1 
+                i += 1
+            if opp_overlap is True:
+                # if there was an overlap with an opposite node,
+                # all of these are not fixed
+                for j in range(curr_i, i+1):
+                    j_node = all_scores_sorted[j][0]
+                    fixed_nodes.discard(j_node)
+                i = last_opp_node
+                # flip the opposite set
+                opp_set_pos = False if opp_set_pos else True
+                opp_set = unr_pos_nodes if opp_set_pos else unr_neg_nodes
+            else:
+                # only need to increment here if there was no overlap
+                i += 1
+                
+        unr_pos_nodes -= fixed_nodes 
+        unr_neg_nodes -= fixed_nodes 
+        return unr_pos_nodes, unr_neg_nodes
     else:
-        # TODO Update
-        print("not yet updated code. Quitting")
-        sys.exit()
-        conflicting_nodes = set()
-        conflicted_node = -1
-        conflicts = False
-        while i < len(all_scores_sorted):
-            curr_n = all_scores_sorted[i][0]
-            if i+1 < len(all_scores_sorted) and curr_n == all_scores_sorted[i+1][0]:
-                fixed_nodes.add(curr_n)
-                i += 1
-            # if nodes_to_rank is specified,
-            # then check to see which nodes are conflicting with the ranks
-            elif curr_n in nodes_to_rank and all_scores_sorted[i][1] == "UB":
-                conflicts = True
-                conflicted_node = curr_n 
-                conflicting_nodes.add(curr_n) 
-            # if we've hit the LB, then stop checking
-            elif curr_n == conflicted_node:
-                conflicts = False
-            elif conflicts is True:
-                conflicting_nodes.add(curr_n)
-            i += 1
+        print("Error: need to pass either the 'unranked_nodes' set or both 'pos_nodes' and 'neg_nodes'")
+        return
 
-        #unranked_nodes = conflicting_nodes
-        return conflicting_nodes
 
-    # n^2 comparisons
-#                fixed_nodes = unranked_nodes.copy()
-#                for u in unranked_nodes:
-#                    for v in unranked_nodes:
-#                        # don't check the same pair of nodes twice
-#                        if v <= u:
-#                            continue
-#                        # if the LB and UB of these two nodes overlap, then these two node's rankings are not fixed
-#                        if LBs[u] < UBs[v] - self.epsUB and \
-#                                UBs[u] - self.epsUB > LBs[v]:
-#                            fixed_nodes.discard(u)
-#                            fixed_nodes.discard(v)
-##                            if len(unranked_nodes) < 70:
-##                                print("\t\tLBs[u] < UBs[v] and UBs[u] > LBs[v]: %0.6f < %0.6f, %0.6f > %0.6f" % (LBs[u], UBs[v], UBs[u], LBs[v]))
-#                            break
+# this is like 10x slower than python's sort function
+def insertionSort(alist, tuple_idx=None):
+    if tuple_idx is None:
+        for index in range(1,len(alist)):
+            currentvalue = alist[index]
+            position = index
 
-    return fixed_nodes
+            while position > 0 and alist[position-1] > currentvalue:
+                alist[position] = alist[position-1]
+                position = position-1
+
+            alist[position] = currentvalue
+    else:
+        for index in range(1,len(alist)):
+            currentvalue = alist[index]
+            position = index
+
+            while position > 0 and alist[position-1][tuple_idx] > currentvalue[tuple_idx]:
+                alist[position] = alist[position-1]
+                position = position-1
+
+            alist[position] = currentvalue
 
 
 def get_neighbors(P):
@@ -516,3 +577,105 @@ def delete_rows_csr(mat, indices):
 #    #print(len(mask))
 #    mask[indices] = False
 #    return mat[:,mask]
+
+
+def compute_eval_measures(scores, positives, negatives=None, track_pos_neg=False):
+    """
+    Compute the precision and false-positive rate at each change in recall (true-positive rate)
+    *scores*: dictionary containing a score for each node
+    *negatives*: if negatives are given, then the FP will only be from the set of negatives given
+    *track_pos_neg*: if specified, track the score and rank of the positive and negative nodes,
+        and return a tuple of the node ids in order of their score, their score, their idx, and 1/-1 for pos/neg
+    """
+    #f1_score = metrics.f1score(positives, 
+    #num_unknowns = len(scores) - len(positives) 
+    positives = set(positives)
+    check_negatives = False
+    if negatives is not None:
+        check_negatives = True 
+        negatives = set(negatives)
+    else:
+        print("TODO. Treating all non-positives as negatives not yet implemented.")
+    # compute the precision and recall at each change in recall
+    # TODO I should call numpy argsort to ensure I'm using the full precision when comparing values
+    # use np.argsort
+    #nodes_sorted_by_scores = sorted(scores, key=scores.get, reverse=True)
+    nodes_sorted_by_scores = np.argsort(scores)[::-1]
+    #print("computing the rank of positive nodes")
+    # this is really slow...
+    #pos_ranks = sorted([nodes_sorted_by_scores.index(p)+1 for p in positives])
+    #print("%d positives, %d pos_ranks" % (len(positives), len(pos_ranks)))
+    #print(pos_ranks)
+    #print([scores[s] for s in nodes_sorted_by_scores[:pos_ranks[0]+1]])
+    precision = [1]
+    recall = [0]
+    fpr = []
+    pos_neg_stats = []  # tuple containing the node, score and idx
+    # TP is the # of correctly predicted positives so far
+    TP = 0
+    FP = 0
+    rec = 0
+    for i, n in enumerate(nodes_sorted_by_scores):
+        # TODO this could be slow if there are many positives
+        if n in positives:
+            TP += 1
+            # precisions is the # of true positives / # true positives + # of false positives (or the total # of predictions)
+            precision.append(TP / float(TP + FP))
+            # recall is the # of recovered positives TP / TP + FN (total # of positives)
+            rec = TP / float(len(positives))
+            recall.append(rec)
+            # fpr is the FP / FP + TN
+            fpr.append((rec, FP / float(len(negatives))))
+            if track_pos_neg:
+                pos_neg_stats.append((n, scores[n], i, 1)) 
+        elif check_negatives is False or n in negatives:
+            FP += 1
+            fpr.append((rec, FP / float(len(negatives))))
+        #else:
+        #    continue
+
+    # TODO how should I handle this case?
+    if len(precision) == 0:
+        precision.append(0)
+        recall.append(1)
+
+    #print(precision[0], recall[0], fpr[0])
+
+    if track_pos_neg:
+        return precision, recall, fpr, pos_neg_stats
+    else:
+        return precision, recall, fpr
+
+
+
+
+def compute_fmax(prec, rec):
+    f_measures = []
+    for i in range(len(prec)):
+        p, r = prec[i], rec[i]
+        if p+r == 0:
+            harmonic_mean = 0
+        else:
+            harmonic_mean = (2*p*r)/(p+r)
+        f_measures.append(harmonic_mean)
+    return max(f_measures)
+
+def compute_avgp(prec, rec):
+    # average precision score
+    # see http://scikit-learn.org/stable/modules/generated/sklearn.metrics.average_precision_score.html#sklearn.metrics.average_precision_score
+    avgp = 0
+    prev_r = 0 
+    for p,r in zip(prec, rec):
+        recall_change = r - prev_r
+        avgp += (recall_change*p)
+        prev_r = r
+    #avgp = avgp / float(len(alg_prec_rec))
+    return avgp
+
+def compute_auprc(prec, rec):
+    auprc = metrics.auc(rec, prec)
+    return auprc
+
+def compute_auroc(tpr, fpr):
+    auroc = metrics.auc(fpr, tpr)
+    return auroc
