@@ -230,17 +230,20 @@ def normalizeGraphEdgeWeights(W, ss_lambda=None, axis=1):
     *axis*: The axis to normalize by. 0 is columns, 1 is rows
     """
     # normalize the matrix
-    # by dividing every edge by the node's degree (row sum)
+    # by dividing every edge weight by the node's degree 
     deg = np.asarray(W.sum(axis=axis)).flatten()
     if ss_lambda is None:
         deg = np.divide(1., deg)
     else:
         deg = np.divide(1., ss_lambda + deg)
     deg[np.isinf(deg)] = 0
+    # make sure we're dividing by the right axis
+    if axis == 1:
+        deg = csr_matrix(deg).T
+    else:
+        deg = csr_matrix(deg)
     P = W.multiply(deg)
     return P.asformat(W.getformat())
-    # this gives a memory error likely because it first converts the matrix to a numpy matrix
-    #return W / W.sum(axis=1)
 
 
 def _net_normalize(W, axis=0):
