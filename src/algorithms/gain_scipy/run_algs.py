@@ -8,6 +8,7 @@ import os
 import sys
 from tqdm import tqdm
 import itertools
+import time
 sys.path.append("src")
 import utils.file_utils as utils
 # add the folder above and two folders above
@@ -15,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import fungcat_settings as f_settings
 import setup_sparse_networks as setup
+sys.path.append("src/algorithms/gain_scipy")
 import alg_utils
 import sinksource
 import genemania
@@ -23,13 +25,18 @@ import sinksource_ripple
 import sinksource_squeeze
 from aptrank.birgrank import birgRank
 import aptrank.run_birgrank as run_birgrank
-from aptrank.aptrank import AptRank
+# only import aptrank if its being run
+# as it uses the cvx solver not installed on all machines
+#from aptrank.aptrank import AptRank
 #import pandas as pd
 import networkx as nx
 from scipy import sparse
 import numpy as np
-from sklearn import metrics
-from sklearn.model_selection import KFold
+# needed for cross-validation
+try:
+    from sklearn.model_selection import KFold
+except ImportError:
+    pass
 #import gc
 
 
@@ -69,8 +76,9 @@ class Alg_Runner:
             alpha=0.8, eps=0.0001, max_iters=1000,
             k_list=[100], t_list=[2], s_list=[50],  
             deltaUBLB_list=[None], epsUB_list=[0], 
-            rank_topk=False, rank_all=False, rank_pos=False, compare_ranks=False,
+            rank_topk=False, rank_all=False, rank_pos_neg=False, compare_ranks=False,
             taxon=None, num_pred_to_write=100, 
+            tol=1e-05,
             aptrank_data=None, theta=.5, mu=.5, k=8, s=5, t=0.5, diff_type="twoway",
             only_cv=False, cross_validation_folds=None, 
             forcenet=False, forcealg=False, verbose=False, progress_bar=True):
@@ -82,12 +90,9 @@ class Alg_Runner:
         self.exp_name = exp_name
         #self.W = W
         self.prots = prots
-        self.ann_matrix = ann_matrix.tolil()
+        #self.ann_matrix = ann_matrix.tolil()
+        self.ann_matrix = ann_matrix
         self.goids = goids
-        if aptrank_data is not None:
-            self.dag_matrix, self.pos_matrix, self.dag_goids = aptrank_data
-        self.theta, self.mu = theta, mu
-        self.k, self.s, self.t, self.diff_type = k, s, t, diff_type
         self.algorithms = algorithms
         self.weight_swsn, self.weight_per_goterm = weight_swsn, weight_per_goterm
         self.unweighted = unweighted
@@ -102,8 +107,15 @@ class Alg_Runner:
         self.epsUB_list = epsUB_list
         self.rank_topk = rank_topk
         self.rank_all = rank_all
-        self.rank_pos = rank_pos
+        self.rank_pos_neg = rank_pos_neg
         self.compare_ranks = compare_ranks
+        # genemania parameters
+        self.tol = tol
+        # aptrank parameters
+        if aptrank_data is not None:
+            self.dag_matrix, self.pos_matrix, self.dag_goids = aptrank_data
+        self.theta, self.mu = theta, mu
+        self.k, self.s, self.t, self.diff_type = k, s, t, diff_type
         # evaluation parameters
         self.taxon = taxon
         self.only_cv = only_cv
@@ -178,13 +190,15 @@ class Alg_Runner:
             if alg == 'birgrank' and self.only_cv is False:
                 continue
 
-            out_pref = "%s/pred-%s%s" % (
+            self.out_pref = "%s/pred-%s%s" % (
                 self.out_dir, 'unw-' if self.unweighted else '',
                 'l%d-'%int(self.ss_lambda) if self.ss_lambda is not None else '')
             # "prediction mode" is run if the user doesn't specify --only-cv
             if self.only_cv is False:
                 if self.num_pred_to_write == 0:
                     out_pref = None
+                else:
+                    out_pref = self.out_pref
 
                 # now run the algorithm with all combinations of parameters
                 # TODO the goid scores are for a single set of parameters. 
@@ -206,6 +220,8 @@ class Alg_Runner:
                         0 if self.ss_lambda is None else int(self.ss_lambda))
                     cv_params_results = self.run_goterm_cv(alg,
                             folds=self.cross_validation_folds, out_pref=out_pref)
+                    print("Total time taken by algorithms to compute scores for cross validation:")
+                    print(", ".join(["%s: %0.3f" % (key, val) for key, val in sorted(cv_params_results.items())]))
                     #params_results.update(cv_params_results)
 
             #if self.verbose:
@@ -231,7 +247,7 @@ class Alg_Runner:
 #            print("%s already exists. Use --forcealg to overwrite it" % (out_file))
 
         if self.only_cv is False:
-            return goid_scores
+            return goid_scores, curr_params_results
         else:
             return
 
@@ -255,9 +271,9 @@ class Alg_Runner:
             dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
         elif alg == 'aptrank':
             k, s, t, diff_type = self.k, self.s, self.t, self.diff_type
-            out_pref += 'a%s-t%s-m%s' % (
+            out_pref += 'k%s-s%s-t%s-%s' % (
                 str(k).replace('.', '_'), str(s).replace('.', '_'),
-                str(t).replace('.', '_'))
+                str(t).replace('.', '_'), diff_type)
             dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
         utils.checkDir(os.path.dirname(out_pref))
 
@@ -269,7 +285,7 @@ class Alg_Runner:
             # weight the network if needed
             #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
             if self.weight_swsn is True:
-                W = setup.weight_SWSN(train_ann_mat, self.sparse_networks,
+                W, total_time = setup.weight_SWSN(train_ann_mat, self.sparse_networks,
                         net_names=self.net_names, nodes=self.prots)
                 self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
                 if alg == 'genemania':
@@ -293,7 +309,7 @@ class Alg_Runner:
 
                 # the W matrix is already normalized, so I can run
                 # birgrank/aptrank from here
-                Xh = self.run_aptrank_with_params(
+                Xh, params_results = self.run_aptrank_with_params(
                     train_pos_mat, self.dag_matrix, alg=alg, nodes=test_nodes) 
                 goid_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
                 # limit the scores to only the GOIDs for which we have annotations
@@ -371,7 +387,6 @@ class Alg_Runner:
         *returns*: a matrix of prediction scores with the same
             dimensions as pos_mat
         """
-
         assert (pos_mat.shape[0] == hierarchy_mat.shape[0]), \
             "Error: annotation and hierarchy matrices " + \
             "do not have the same shape: %d, %d" % (
@@ -381,24 +396,35 @@ class Alg_Runner:
         #pos_mat = self.ann_matrix.copy()
         #pos_mat[pos_mat < 0] = 0
         if alg == 'birgrank':
+            start_time = time.process_time()
             Xh = birgRank(self.P, pos_mat.transpose(), hierarchy_mat,
                         alpha=self.alpha, theta=self.theta, mu=self.mu, 
                         eps=self.eps, max_iters=self.max_iters,
                         nodes=nodes, verbose=self.verbose)
             Xh = Xh.T
+            total_time = time.process_time() - start_time
         elif alg == 'aptrank':
+            # make sure aptrank is imported
+            from aptrank.aptrank import AptRank
+            # try specifying more cores than there are available
+            # to split the problem up into smaller chunks
+            #num_cores = 12
+            num_cores = 24
+            start_time = time.process_time()
             runner = AptRank(self.P, pos_mat.transpose(), hierarchy_mat,
-                        K=self.k, S=self.s, T=self.t, NCores=12, diffusion_type=self.diff_type)
+                        K=self.k, S=self.s, T=self.t, NCores=num_cores, diffusion_type=self.diff_type)
             Xh = runner.algorithm()
             Xh = Xh.T
+            total_time = time.process_time() - start_time
         else:
             print("alg %s not yet implemented." % (alg))
-            return 
+            return None, None
         # now write the scores to a file
         if out_pref is not None:
-            out_file = "%sa%s-t%s-m%s.txt" % (
-                out_pref, str(self.alpha).replace('.', '_'),
-                str(self.theta).replace('.', '_'), str(self.mu).replace('.', '_'))
+            #out_file = "%sa%s-t%s-m%s.txt" % (
+            #    out_pref, str(self.alpha).replace('.', '_'),
+            #    str(self.theta).replace('.', '_'), str(self.mu).replace('.', '_'))
+            out_file = "%s.txt" % (out_pref)
             print("\twriting top %d scores to %s" % (self.num_pred_to_write, out_file))
 
             with open(out_file, 'w') as out:
@@ -408,7 +434,8 @@ class Alg_Runner:
                     scores = {self.prots[j]:s for j, s in enumerate(scores)}
                     self.write_scores_to_file(scores, goid=self.goids[i], file_handle=out,
                             num_pred_to_write=self.num_pred_to_write)
-        return Xh
+        params_results = {'%s_total_time'%alg: total_time}
+        return Xh, params_results
 
     def run_alg_with_params(self, alg, out_pref=None):
         """ Call the appropriate algorithm's function
@@ -428,6 +455,9 @@ class Alg_Runner:
             out_file = "%sresults.txt" % (out_pref) if out_pref is not None else None
             goid_scores, params_results = self.run_alg_on_goterms(alg,
                     out_file=out_file)
+        elif alg in ['birgrank', 'aptrank']:
+            print("WARNING: %s not yet implemented in prediction mode" % (alg))
+            return {}, {}
 
         return goid_scores, params_results
 
@@ -437,8 +467,9 @@ class Alg_Runner:
         a = self.alpha
         out_file = None
         if out_pref is not None:
-            out_file = "%sa%s-eps%s.txt" % (
-                    out_pref, str(a).replace('.', '_'), str(self.eps).replace('.', '_'))
+            out_file = "%sa%s-eps%s-maxi%d.txt" % (
+                    out_pref, str(a).replace('.', '_'), str(self.eps).replace('.', '_'),
+                    self.max_iters)
             #header = "#%s\tGO term: %s\t%d positives\t%d negatives\ta=%s\teps=%s\n" \
             #        % (alg, goterm, len(positives), len(negatives), str(a), str(eps))
 
@@ -446,8 +477,8 @@ class Alg_Runner:
                 out_file=out_file, a=a, eps=self.eps)
         all_params_results.update(params_results)
 
-        if self.verbose:
-            print(params_results_to_table(params_results))
+        #if self.verbose:
+        #    print(params_results_to_table(params_results))
         return goid_scores, all_params_results
 
     def run_topk_with_params(self, alg, out_pref=None):
@@ -482,8 +513,13 @@ class Alg_Runner:
                 if out_pref is not None:
                     out_file = "%sk%d-a%s-epsUB%s.txt" % (out_pref, k, str(a).replace('.', '_'),
                                                           str(epsUB).replace('.', '_'))
-                goid_scores, params_results = self.run_alg_on_goterms(alg, out_file=out_file,
-                        a=a, k=k, epsUB=epsUB)
+                # the ranks file will only be written if the according settings is used
+                k_str = str(k) if self.rank_topk is True else 'all'
+                ranks_file = "%scompare-%sranks-a%s-k%s.txt" % (self.out_pref,
+                        'pos-neg-' if sparse.issparse(self.rank_pos_neg) else 'all-', 
+                        str(a).replace('.', '_'), k_str)
+                goid_scores, params_results = self.run_alg_on_goterms(
+                    alg, out_file=out_file, a=a, k=k, epsUB=epsUB, ranks_file=ranks_file)
                 all_params_results.update(params_results)
 
             if self.verbose:
@@ -491,17 +527,18 @@ class Alg_Runner:
 
         return goid_scores, all_params_results
 
-    def run_alg_on_goterms(self, alg, out_file=None, 
-            a=0.8, eps='-', k='-', t='-', s='-', epsUB=0):
+    def run_alg_on_goterms(
+            self, alg, out_file=None, a=0.8, eps='-', k='-', t='-', s='-',
+            epsUB=0, ranks_file=None):
         """ Run the specified algorithm with the given parameters for each goterm 
         *returns*: a dictionary of scores from the algorithm for each goterm
             and a dictionary of summary statistics about the run
         """
         # scores from the algorithm for each goterm
-        params_results = {} 
+        params_results = defaultdict(int)
         #goid_scores = {}
         # store the results in a sparse matrix
-        goid_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+        goid_scores = sparse.csr_matrix(self.ann_matrix.shape, dtype=np.float)
         try:
             if out_file is not None:
                 if self.forcealg is False and os.path.isfile(out_file):
@@ -515,26 +552,42 @@ class Alg_Runner:
                 #file_handle.write("#%s\tk=%d\tt=%d\ts=%d\ta=%s\tepsUB=%s\n" \
                 #        % (alg, k, t, s, str(a), str(epsUB)))
             if self.compare_ranks and 'squeeze' in alg:
-                out_dir = "outputs/viz/ranks/%s/" % (self.exp_name)
-                utils.checkDir(out_dir)
-                k_str = str(k) if self.rank_topk is True else 'all'
-                rank_file = "%s/compare-ranks-%s-%s-k%s.txt" % (out_dir, self.version, alg, k_str)
+                #out_dir = "outputs/viz/ranks/%s/" % (self.exp_name)
+                #utils.checkDir(out_dir)
+                #k_str = str(k) if self.rank_topk is True else 'all'
+                #rank_file = "%s/compare-ranks-%s-%s-k%s.txt" % (out_dir, self.version, alg, k_str)
                 # write the ranks to a file
-                print("Writing rank comparison to: %s" % (rank_file))
-                rank_fh = open(rank_file, 'w', buffering=100)
-                rank_fh.write("#goterm\tnum_pos\titer\tkendalltau\tspearmanr\tnum_unranked\tmax_d\n")
+                if self.taxon is None:
+                    if self.forcealg is False and os.path.isfile(ranks_file):
+                            print("%s already exists. Use --forcealg to overwrite" % (ranks_file))
+                            return {}, {}
+                    else:
+                        print("Writing rank comparison to: %s" % (ranks_file))
+                        rank_fh = open(ranks_file, 'w', buffering=100)
+                        rank_fh.write("#goterm\tnum_pos\titer\tkendalltau\tnum_unranked\tmax_unr_stretch\tmax_d\tUB\tfmax\tavgp\tauprc\tauroc\n")
+                else:
+                    if not os.path.isfile(ranks_file):
+                        print("Writing rank comparison to: %s" % (ranks_file))
+                        rank_fh = open(ranks_file, 'w', buffering=100)
+                        rank_fh.write("#goterm\ttaxon\tnum_pos\titer\tkendalltau\tnum_unranked\tmax_unr_stretch\tmax_d\tUB\tfmax\tavgp\tauprc\tauroc\n")
+                    else:
+                        print("Appending rank comparison to: %s" % (ranks_file))
+                        rank_fh = open(ranks_file, 'a', buffering=100)
 
             print("Running %s for %d goterms. Writing to %s" % (alg, self.ann_matrix.shape[0], out_file))
             for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
                 goid = self.goids[i]
                 positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
                 # get the row corresponding to the current goids annotations 
+                # TODO This cutoff should either be a parameter or handled elsewhere 
                 if len(positives) < 10:
-                    tqdm.write("Skipping goterm %s. It has %d annotations which is < the minimum 10." % (goid, len(positives)))
+                    if self.verbose:
+                        tqdm.write("Skipping goterm %s. It has %d annotations which is < the minimum 10." % (goid, len(positives)))
                     continue
-                
+
                 #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
                 if self.weight_per_goterm is True:
+                    start_time = time.process_time()
                     y = np.zeros(self.normalized_nets[0].shape[0])
                     y[positives] = 1
                     y[negatives] = -1
@@ -543,9 +596,16 @@ class Alg_Runner:
                     self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
                     if alg == 'genemania':
                         self.L = genemania.setup_laplacian(W)
+                    params_results['%s_weight_time'%(alg)] += time.process_time() - start_time
+                rank_pos_neg = None 
+                # if the matrix of left-out positives were passed in, then get the current pos and neg
+                #if self.rank_pos_neg not in [True, False, None]:  # this doesn't work because it's trying to compare the values of the matrix
+                if sparse.issparse(self.rank_pos_neg):
+                    pos, neg = alg_utils.get_goid_pos_neg(self.rank_pos_neg, i)
+                    rank_pos_neg = (set(pos), set(neg))
 
-                scores_arr, curr_params_results, _ = self.run_alg(alg, positives, negatives, 
-                        a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid)
+                scores_arr, curr_params_results, ss_squeeze = self.run_alg(alg, positives, negatives, 
+                        a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid, rank_pos_neg=rank_pos_neg)
                 # storing all of the scores for each goterm takes a lot of memory
                 # rather than store the scores in a dictionary, store them in a sparse matrix
                 # split the dictionary into a list of indices and a list of scores
@@ -554,22 +614,30 @@ class Alg_Runner:
                 #scores_arr = np.zeros(goid_scores.shape[1])
                 #scores_arr[list(indices)] = list(score_list)
                 goid_scores[i] = scores_arr
-                params_results.update(curr_params_results)
+                for key in curr_params_results:
+                    params_results[key] += curr_params_results[key]
 
                 if self.compare_ranks and 'squeeze' in alg:
                     # compare how long it takes for the ranks to match the previous run
                     tqdm.write("\tRepeating the run, but comparing the ranks from the previous run at each iteration")
                     # keep only the nodes with a non-zero score
-                    scores = {n: s for n, s in enumerate(scores_arr) if s != 0}
+                    scores = {n: s for n, s in enumerate(scores_arr) if s > 0}
                     # ranks is a list containing the ranked order of nodes.
                     # The node with the highest score is first, the lowest is last
-                    ranks = [n for n in sorted(scores, key=scores.get, reverse=True)]
+                    if rank_pos_neg is not None:
+                        pos_neg_nodes = rank_pos_neg[0] | rank_pos_neg[1]
+                        ranks = [n for n in sorted(set(scores.keys()) & pos_neg_nodes, key=scores.get, reverse=True)]
+                    else:
+                        ranks = [n for n in sorted(scores, key=scores.get, reverse=True)]
                     ranks = ranks[:k] if self.rank_topk is True else ranks
                     _, _, ss_squeeze = self.run_alg(alg, positives, negatives,
-                            a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid, ranks_to_compare=ranks)
-                    rank_fh.write(''.join("%s\t%d\t%d\t%0.6f\t%0.6f\t%d\t%s\n" % (goid, len(positives), i+1,
-                        ss_squeeze.kendalltau_list[i], ss_squeeze.spearmanr_list[i],
-                        ss_squeeze.num_unranked_list[i], ss_squeeze.max_d_list[i])
+                            a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid, 
+                            ranks_to_compare=ranks, scores_to_compare=ss_squeeze.scores_to_compare,
+                            rank_pos_neg=rank_pos_neg)
+                    rank_fh.write(''.join("%s%s\t%d\t%d\t%0.6f\t%d\t%d\t%0.4e\t%0.4e\t%0.4f\t%0.4f\t%0.4f\t%0.4f\n" % (
+                        goid, "\t%s"%self.taxon if self.taxon is not None else "", len(positives), i+1, ss_squeeze.kendalltau_list[i],
+                        ss_squeeze.num_unranked_list[i], ss_squeeze.max_unranked_stretch_list[i], ss_squeeze.max_d_list[i], ss_squeeze.UB_list[i],
+                        ss_squeeze.eval_stats_list[i][0], ss_squeeze.eval_stats_list[i][1], ss_squeeze.eval_stats_list[i][2], ss_squeeze.eval_stats_list[i][3])
                                         for i in range(ss_squeeze.num_iters)))
 
                 if out_file is not None:
@@ -591,12 +659,13 @@ class Alg_Runner:
             print("Finished running %s for %d goterms. Wrote to %s" % (alg, len(self.goids), out_file))
         if self.compare_ranks and 'squeeze' in alg:
             rank_fh.close()
-            print("Finished running rank comparison. Wrote to: %s" % (rank_file))
+            print("Finished running rank comparison. Wrote to: %s" % (ranks_file))
 
         return goid_scores, params_results
 
-    def run_alg(self, alg, positives, negatives, nodes_to_rank=None,
-                a=0.8, eps='-', k='-', t='-', s='-', epsUB=0, goid='-', ranks_to_compare=None):
+    def run_alg(self, alg, positives, negatives, rank_pos_neg=None,
+                a=0.8, eps='-', k='-', t='-', s='-', epsUB=0, goid='-',
+                ranks_to_compare=None, scores_to_compare=None):
         """ Run the specified algorithm with the given parameters for each goterm 
         *returns*: a dictionary of scores from the algorithm for each goterm
             and a dictionary of summary statistics about the run
@@ -608,13 +677,16 @@ class Alg_Runner:
             num_unk -= len(negatives) 
         len_N = self.P.shape[0]
         ss_obj = None 
+        params_results = {} 
 
         # TODO streamline calling the correct function. They all take the same parameters
         # This uses the same UB as Ripple
         if alg in ['sinksourceplus', 'sinksource']:
-            scores, total_time, iters, comp = sinksource.runSinkSource(
-                    self.P, positives, negatives=negatives, max_iters=self.max_iters, delta=eps, a=a)
+            scores, total_time, real_time, iters, comp = sinksource.runSinkSource(
+                self.P, positives, negatives=negatives, max_iters=self.max_iters,
+                eps=eps, a=a, verbose=self.verbose)
             update_time = '-'
+            params_results["%s_real_time"%alg] = real_time
         elif alg in ['localplus', 'local']:
             scores, total_time = sinksource.runLocal(
                     self.P, positives, negatives=negatives)
@@ -623,15 +695,17 @@ class Alg_Runner:
             y = np.zeros(self.P.shape[0])
             y[positives] = 1
             y[negatives] = -1
-            scores, total_time = genemania.runGeneMANIA(self.L, y)
-            update_time, iters, comp = [-1, -1, -1]
+            scores, total_time, real_time, iters = genemania.runGeneMANIA(self.L, y, tol=self.tol, verbose=self.verbose)
+            update_time, comp = [-1, -1]
+            params_results["%s_real_time"%alg] = real_time
         elif alg in ['sinksourceplus-squeeze', 'sinksource-squeeze']:
             ss_obj = sinksource_squeeze.SinkSourceSqueeze(
                     self.P, positives, negatives=negatives, k=k, a=a, epsUB=epsUB, verbose=self.verbose,
-                    rank_topk=self.rank_topk, rank_all=self.rank_all, rank_nodes=nodes_to_rank,
-                    ranks_to_compare=ranks_to_compare)
+                    rank_topk=self.rank_topk, rank_all=self.rank_all, rank_pos_neg=rank_pos_neg,
+                    ranks_to_compare=ranks_to_compare, scores_to_compare=scores_to_compare, max_iters=self.max_iters)
             R, scores = ss_obj.runSinkSourceSqueeze() 
             total_time, update_time, iters, comp, len_N = ss_obj.get_stats()
+            params_results["%s_update_time"%alg] = update_time
             num_unk = len_N
         elif alg in ['sinksourceplus-ripple', 'sinksource-ripple']:
             ss_obj = sinksource_ripple.SinkSourceRipple(
@@ -642,14 +716,15 @@ class Alg_Runner:
             num_unk = ss_obj.P.shape[0]
 
         tqdm.write("\t%s converged after %d iterations " % (alg, iters) +
-                "(%0.2f sec) for goterm %s" % (total_time, goid))
+                "(%0.4f sec) for goterm %s" % (total_time, goid))
 
         # also keep track of the time it takes for each of the parameter sets
-        params_results = {} 
-        params_key = (alg, goid, len(positives), num_unk, a, eps, k, t, s, epsUB)
-        params_results[params_key] = (total_time, update_time, iters, comp, len_N)
+        params_results["%s_total_time"%alg] = total_time
+        #params_key = (alg, goid, len(positives), num_unk, a, eps, k, t, s, epsUB)
+        #params_results[params_key] = (total_time, update_time, iters, comp, len_N)
 
         # TODO return a reference to the object used to run the algorithm to get additional statistics where necessary
+        #return scores, params_results, ss_obj
         return scores, params_results, ss_obj
 
     def plot_max_ds(self, max_d_list):
@@ -700,11 +775,11 @@ class Alg_Runner:
         For every GO term, split the positives and negatives into the specified number of folds 
             and run and evaluate the given algorithm
         """
+        params_results = defaultdict(int)
+
         # compare how long it takes to run each from scratch vs using the previous run's scores
-        params_results = {}
         #overall_time_normal = 0
         #overall_time_using_predictions = 0
-
         #if alg not in ['sinksource', "sinksourceplus", "sinksource-squeeze", "sinksourceplus-squeeze"]:
         #    print("%s not yet implemented for CV" % (alg))
         #    return params_results
@@ -720,8 +795,9 @@ class Alg_Runner:
 
         out_file = None
         if out_pref is not None:
-            out_file = "%sa%s-eps%s.txt" % (
-                    out_pref, str(self.alpha).replace('.', '_'), str(self.eps).replace('.', '_'))
+            out_file = "%sa%s-eps%s-maxi%d.txt" % (
+                    out_pref, str(self.alpha).replace('.', '_'), str(self.eps).replace('.', '_'),
+                    self.max_iters)
             print("Writing CV results to %s" % (out_file))
             file_handle = open(out_file, 'w')
             file_handle.write("#goterm\tfmax\n")
@@ -739,7 +815,7 @@ class Alg_Runner:
             fold = 0
             # because each fold contains a different set of positives, and combined they contain all positives,
             # store all of the prediction scores from each fold in a list
-            combined_fold_scores = {}
+            combined_fold_scores = np.zeros(self.P.shape[0], dtype='float128')
             #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
             if self.weight_per_goterm is True:
                 unknowns = set(range(self.normalized_nets[0].shape[0])) - set(positives) 
@@ -755,8 +831,8 @@ class Alg_Runner:
 
                 #if self.rank_pos is True and ('squeeze' in alg or 'ripple' in alg):
                 nodes_to_rank = None 
-                if self.rank_pos is True:
-                    nodes_to_rank = set(list(pos_test))
+                if self.rank_pos_neg is True:
+                    nodes_to_rank = (set(list(pos_test)), set(list(neg_test)))
 
                 # 
                 #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
@@ -775,10 +851,12 @@ class Alg_Runner:
                         self.L = genemania.setup_laplacian(W)
 
                 # TODO use the list of parameters (e.g., alpha, eps) rather than the first one.
-                scores, params_results, _ = self.run_alg(alg, pos_train, neg_train,
-                        nodes_to_rank=nodes_to_rank, goid=goid,
+                scores, curr_params_results, _ = self.run_alg(alg, pos_train, neg_train,
+                        rank_pos_neg=nodes_to_rank, goid=goid,
                         a=self.alpha, eps=self.eps, k=self.k_list[0],
                         t=self.t_list[0], s=self.s_list[0], epsUB=self.epsUB_list[0])
+                for key in curr_params_results:
+                    params_results[key] += curr_params_results[key]
                     # scores is a dictionary of node integers 
                     # containing only scores for the non-positive and non-negative nodes
                     #scores = np.array([scores[n] for n in pos_test])
@@ -789,16 +867,18 @@ class Alg_Runner:
                     print("WARNING: No scores found. Skipping")
                     continue
 
+                nodes_to_track = list(pos_test) + list(neg_test)
                 # the test positives and negatives will appear in a single fold
-                fold_scores = {n:scores[n] for n in set(pos_test).union(set(neg_test))}
+                #fold_scores = {n:scores[n] for n in set(pos_test).union(set(neg_test))}
                 if nodes_to_rank is not None:
-                    fold_pos_ranks = [i for i, x in enumerate(sorted(scores, key=scores.get)) if x in nodes_to_rank]
+                    fold_pos_ranks = [i for i, x in enumerate(sorted(scores, key=scores.get)) if x in nodes_to_rank[0]]
                     print("Ranks of left out positives:")
                     print(fold_pos_ranks)
                 # the unknowns will be in each fold, so append the fold number to those nodes
                 #for n in unknowns:
                 #    fold_scores["%d-%d" % (n, fold)] = scores[n]
-                combined_fold_scores.update(fold_scores)
+                #combined_fold_scores.update(fold_scores)
+                combined_fold_scores[nodes_to_track] = scores[nodes_to_track]
 
                 #prec, tpr, fpr = self.compute_eval_measures(fold_scores, pos_test, neg_test)
                 #fmax = self.compute_fmax(prec, tpr)
@@ -808,8 +888,8 @@ class Alg_Runner:
                 continue
 
             # sort the combined scores by the score, and then compute the metrics on the combined scores
-            prec, recall, fpr = self.compute_eval_measures(combined_fold_scores, positives, negatives)
-            fmax = self.compute_fmax(prec, recall)
+            prec, recall, fpr = alg_utils.compute_eval_measures(combined_fold_scores, positives, negatives)
+            fmax = alg_utils.compute_fmax(prec, recall)
             tqdm.write("\toverall fmax: %0.3f" % (fmax))
             if out_file is not None:
                 file_handle.write("%s\t%0.4f\n" % (goid, fmax))
@@ -824,7 +904,7 @@ class Alg_Runner:
         return params_results
 
     def evaluate_ground_truth(
-            self, goid_scores, goids, true_ann_matrix, out_pref,
+            self, goid_scores, goids, true_ann_matrix, out_file,
             non_pos_as_neg_eval=False, taxon='-',
             alg='', write_prec_rec=False, append=True):
 
@@ -850,14 +930,18 @@ class Alg_Runner:
             positives = np.where(goid_ann > 0)[0]
             # to get the scores, map the current goid index to the
             # index of the goid in the scores matrix
-            scores = goid_scores[score_goids2idx[goid]].toarray().flatten()
+            scores = goid_scores[score_goids2idx[goid]]
+            # aptrank does not return a sparse matrix, so this isn't always needed
+            if sparse.issparse(scores):
+                scores = scores.toarray().flatten()
             # convert the scores to a dictionary
-            scores = {i: s for i,s in enumerate(scores)}
+            #scores = {i: s for i,s in enumerate(scores)}
             # this was already done
             #positives = set(self.node2idx[n] for n in positives if n in self.node2idx)
             goid_num_pos[goid] = len(positives)
             if len(positives) == 0:
-                print("%s has 0 positives after restricting to nodes in the network. Skipping" % (goid))
+                if self.verbose:
+                    print("%s has 0 positives after restricting to nodes in the network. Skipping" % (goid))
                 continue
             if non_pos_as_neg_eval is True:
                 # leave everything not a positive as a negative
@@ -868,20 +952,20 @@ class Alg_Runner:
                 if len(negatives) == 0:
                     print("WARNING: 0 negatives for %s - %s. Skipping" % (goid, taxon))
                     continue
-            prec, recall, fpr, pos_neg_stats = self.compute_eval_measures(scores, positives, negatives=negatives, track_pos_neg=True)
+            prec, recall, fpr, pos_neg_stats = alg_utils.compute_eval_measures(scores, positives, negatives=negatives, track_pos_neg=True)
             # TODO only write the prec and rec and the points that change in recall(?)
             # TODO also write the prec, recall
             if write_prec_rec:
                 goid_prec_rec[goid] = (prec, recall, pos_neg_stats)
             #print((len(scores), len(positives), len(prec), len(recall)))
-            fmax = self.compute_fmax(prec, recall)
-            avgp = self.compute_avgp(prec, recall)
+            fmax = alg_utils.compute_fmax(prec, recall)
+            avgp = alg_utils.compute_avgp(prec, recall)
             if len(prec) == 1:
                 auprc = 0
                 auroc = 0
             else:
-                auprc = self.compute_auprc(prec, recall)
-                auroc = self.compute_auroc([r for r, f in fpr], [f for r, f in fpr])
+                auprc = alg_utils.compute_auprc(prec, recall)
+                auroc = alg_utils.compute_auroc([r for r, f in fpr], [f for r, f in fpr])
             goid_stats[goid] = (fmax, avgp, auprc, auroc)
             if self.verbose:
                 print("%s fmax: %0.4f" % (goid, fmax))
@@ -890,8 +974,6 @@ class Alg_Runner:
             # TODO
             #out_file = "%s.txt" % (out_pref)
             #if alg in ['sinksource', 'sinksourceplus']:
-            out_file = "%sa%s.txt" % (
-                    out_pref, str(self.alpha).replace('.', '_'))
             # don't write the header each time
             if not os.path.isfile(out_file) or not append:
                 print("Writing results to %s" % (out_file))
@@ -899,7 +981,7 @@ class Alg_Runner:
                     if taxon == '-':
                         out.write("#goid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
                     else:
-                        out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# ann\n")
+                        out.write("#taxon\tgoid\tfmax\tavgp\tauprc\tauroc\t# test ann\n")
             else:
                 print("Appending results to %s" % (out_file))
             with open(out_file, 'a') as out:
@@ -909,126 +991,31 @@ class Alg_Runner:
                     ) for g, (fmax, avgp, auprc, auroc) in goid_stats.items()]))
 
         if write_prec_rec:
-            out_file = "%sprec-rec%s%s.txt" % (
-                out_pref, taxon, '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
-            if alg in ['sinksource', 'sinksourceplus']:
-                out_file = "%sa%s-prec-rec%s%s.txt" % (
-                    out_pref, str(self.alpha).replace('.', '_'), taxon,
-                    '-%s'%(list(goid_prec_rec.keys())[0]) if len(goid_prec_rec) == 1 else "")
+            goid = list(goid_prec_rec.keys())[0]
+            out_file_pr = out_file.replace('.txt', "prec-rec%s%s.txt" % (
+                taxon, '-%s'%(goid) if len(goid_prec_rec) == 1 else ""))
             print("writing prec/rec to %s" % (out_file))
-            with open(out_file, 'w') as out:
+            with open(out_file_pr, 'w') as out:
                 out.write("goid\tprec\trec\tnode\tscore\tidxpos/neg\n")
                 for goid, (prec, rec, pos_neg_stats) in goid_prec_rec.items():
                     out.write(''.join(["%s\t%0.4f\t%0.4f\t%s\t%0.4f\t%d\t%d\n" % (
                         goid, p, r, self.prots[n], s, idx, pos_neg) for p,r,(n,s,idx,pos_neg) in zip(prec[1:], rec[1:], pos_neg_stats)]))
 
-    def compute_eval_measures(self, scores, positives, negatives=None, track_pos_neg=False):
-        """
-        Compute the precision and false-positive rate at each change in recall (true-positive rate)
-        *scores*: dictionary containing a score for each node
-        *negatives*: if negatives are given, then the FP will only be from the set of negatives given
-        *track_pos_neg*: if specified, track the score and rank of the positive and negative nodes,
-            and return a tuple of the node ids in order of their score, their score, their idx, and 1/-1 for pos/neg
-        """
-        #f1_score = metrics.f1score(positives, 
-        #num_unknowns = len(scores) - len(positives) 
-        positives = set(positives)
-        check_negatives = False
-        if negatives is not None:
-            check_negatives = True 
-            negatives = set(negatives)
-        else:
-            print("TODO. Treating all non-positives as negatives not yet implemented.")
-        # compute the precision and recall at each change in recall
-        nodes_sorted_by_scores = sorted(scores, key=scores.get, reverse=True)
-        #print("computing the rank of positive nodes")
-        # this is really slow...
-        #pos_ranks = sorted([nodes_sorted_by_scores.index(p)+1 for p in positives])
-        #print("%d positives, %d pos_ranks" % (len(positives), len(pos_ranks)))
-        #print(pos_ranks)
-        #print([scores[s] for s in nodes_sorted_by_scores[:pos_ranks[0]+1]])
-        precision = [1]
-        recall = [0]
-        fpr = []
-        pos_neg_stats = []  # tuple containing the node, score and idx
-        # TP is the # of correctly predicted positives so far
-        TP = 0
-        FP = 0
-        rec = 0
-        for i, n in enumerate(nodes_sorted_by_scores):
-            # TODO this could be slow if there are many positives
-            if n in positives:
-                TP += 1
-                # precisions is the # of true positives / # true positives + # of false positives (or the total # of predictions)
-                precision.append(TP / float(TP + FP))
-                # recall is the # of recovered positives TP / TP + FN (total # of positives)
-                rec = TP / float(len(positives))
-                recall.append(rec)
-                # fpr is the FP / FP + TN
-                fpr.append((rec, FP / float(len(negatives))))
-                if track_pos_neg:
-                    pos_neg_stats.append((n, scores[n], i, 1)) 
-            elif check_negatives is False or n in negatives:
-                FP += 1
-                fpr.append((rec, FP / float(len(negatives))))
-            #else:
-            #    continue
-
-        # TODO how should I handle this case?
-        if len(precision) == 0:
-            precision.append(0)
-            recall.append(1)
-
-        #print(precision[0], recall[0], fpr[0])
-
-        if track_pos_neg:
-            return precision, recall, fpr, pos_neg_stats
-        else:
-            return precision, recall, fpr
-     
-    def compute_fmax(self, prec, rec):
-        f_measures = []
-        for i in range(len(prec)):
-            p, r = prec[i], rec[i]
-            if p+r == 0:
-                harmonic_mean = 0
-            else:
-                harmonic_mean = (2*p*r)/(p+r)
-            f_measures.append(harmonic_mean)
-        return max(f_measures)
-
-    def compute_avgp(self, prec, rec):
-        # average precision score
-        # see http://scikit-learn.org/stable/modules/generated/sklearn.metrics.average_precision_score.html#sklearn.metrics.average_precision_score
-        avgp = 0
-        prev_r = 0 
-        for p,r in zip(prec, rec):
-            recall_change = r - prev_r
-            avgp += (recall_change*p)
-            prev_r = r
-        #avgp = avgp / float(len(alg_prec_rec))
-        return avgp
-
-    def compute_auprc(self, prec, rec):
-        auprc = metrics.auc(rec, prec)
-        return auprc
-
-    def compute_auroc(self, tpr, fpr):
-        auroc = metrics.auc(fpr, tpr)
-        return auroc
-
-
+    # TODO use only numpy arrays for computing prec/rec
+    #def compute_eval_measures_numpy(self, scores, positives, negatives=None, track_pos_neg=False):
+    #    # only need the scores at locations which are a positive or negative
+        
 def params_results_to_table(params_results):
     # print out a table of the results for each parameter set
     # print out the table after each iteration so the results are still viewable if the script quits earl or something
     results = "\t".join(['alg', 'goterm', '# pos', '# unk', 'a', 'k', 't', 's', 'eps', 'epsUB', 'time', 'update-time', 'iters', '# comp', 'len_N']) + '\n'
     for params_key in sorted(params_results):
         alg, goterm, num_pos, num_unk, a, eps, k, t, s, epsUB = params_key
-        time, update_time, iters, total_comp, len_N = params_results[params_key]
+        total_time, update_time, iters, total_comp, len_N = params_results[params_key]
         update_time = "%0.3f" % update_time if isinstance(update_time, float) else update_time
         results += "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%0.3f\t%s\t%d\t%0.2e\t%s\n" % \
                 (alg, goterm, num_pos, num_unk, str(a), str(k), str(t), str(s), str(eps), str(epsUB), 
-                        time, update_time, iters, total_comp, str(len_N))
+                        total_time, update_time, iters, total_comp, str(len_N))
     return results
 
 
@@ -1039,8 +1026,8 @@ def parse_args(args):
 
     # general parameters
     group = OptionGroup(parser, 'Main Options')
-    group.add_option('','--version', type='string', default="2017_10-seq-sim",
-                     help="Version of the PPI to run. Default: %s" % ("2017_10-seq-sim") + \
+    group.add_option('','--version', type='string', default="2018_06-seq-sim-e1e-25",
+                     help="Version of the PPI to run. Default: %s" % ("2018_06-seq-sim-e1e-25") + \
                      "\nOptions are: %s." % (', '.join(f_settings.ALLOWEDVERSIONS)))
     group.add_option('-N','--net-file', type='string',
                      help="Network file to use. Default is the version's default network")
@@ -1048,7 +1035,9 @@ def parse_args(args):
                      help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(ALGORITHMS)))
     group.add_option('', '--exp-name', type='string',
                      help="Experiment name to use when running GAIN.")
-    group.add_option('', '--pos-neg-file', type='string', action='append',
+    #group.add_option('', '--pos-neg-file', type='string', action='append',
+    # Update: limit to a single pos-neg-file so I can build the annotation matrix directly
+    group.add_option('', '--pos-neg-file', type='string', 
                      help="File containing positive and negative examples for each GO term")
     group.add_option('', '--only-functions', type='string',
                      help="Run GAIN using only the functions in a specified file (should be in XX format i.e., without the leading GO:00).")
@@ -1056,78 +1045,8 @@ def parse_args(args):
                      help="Specify the GO terms to use (should be in GO:00XX format)")
     parser.add_option_group(group)
 
-    # parameters for running algorithms
-    group = OptionGroup(parser, 'Algorithm options')
-    group.add_option('', '--unweighted', action="store_true", default=False,
-                     help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
-    group.add_option('-l', '--sinksourceplus-lambda', type=float, 
-                     help="lambda parameter to specify the weight connecting the unknowns to the negative 'ground' node. Default=None")
-    group.add_option('-a', '--alpha', type=float, default=0.8,
-                     help="Alpha insulation parameter. Default=0.8")
-    group.add_option('', '--eps', type=float, default=0.0001,
-                     help="Stopping criteria for SinkSource. Default=0.0001")
-    group.add_option('', '--max-iters', type=int, default=1000,
-                     help="Maximum # of iterations for SinkSource. Default=1000")
-    # ripple/squeeze parameters
-    group.add_option('-k', '--k', type=int, action="append",
-                     help="Top-k for Ripple, Default=200")
-    group.add_option('-e', '--epsUB', type=float, action="append",
-                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
-    group.add_option('-t', '--t', type=int, action="append",
-                     help="t parameter for Ripple. Default=2")
-    group.add_option('-s', '--s', type=int, action="append",
-                     help="s parameter for Ripple. Default=200")
-    group.add_option('', '--rank-topk', action="store_true", default=False,
-                     help="Continue iterating until the top-k nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
-    group.add_option('', '--rank-all', action="store_true", default=False,
-                     help="Continue iterating until all nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
-    group.add_option('', '--rank-pos', action="store_true", default=False,
-                     help="During cross-validation, continue iterating until the nodes of the left out positives are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
-    group.add_option('', '--compare-ranks', action="store_true", default=False,
-                     help="Compare how long it takes (# iters) for the ranks to match the final fixed ranks." +
-                     "Currently only implemented with ss_squeeze and --rank-topk, --rank-all")
-    parser.add_option_group(group)
-
-    # birgrank options
-    group = OptionGroup(parser, 'BirgRank options')
-    group.add_option('-b', '--obo-file', type='string', default=f_settings.GO_FILE,
-                     help="GO OBO file which contains the GO DAG. Used if running AptRank/BirgRank. Default: %s" % (f_settings.GO_FILE))
-    group.add_option('', '--theta', type=float, default=.5,
-                     help="BirgRank parameter: (1-theta) percent of Rtrain used in seeding vectors")
-    group.add_option('', '--mu', type=float, default=.5,
-                     help="BirgRank parameter: (1-mu) percent of random walkers diffuse from G via Rtrain to H")
-    parser.add_option_group(group)
-
-    # aptrank options
-    group = OptionGroup(parser, 'AptRank options')
-    group.add_option('', '--apt_k', default=8,
-                     help="Markov Chain iterations")
-    group.add_option('', '--apt_s', default=5,
-                     help="Number of shuffles")
-    group.add_option('', '--apt_t', default=0.5,
-                     help="Split percentage")
-    group.add_option('', '--diff_type', default="twoway",
-                     help="Diffusion type: oneway or twoway")
-
-    # parameters for STRING networks
-    group = OptionGroup(parser, 'STRING options')
-    group.add_option('', '--weight-per-goterm', action="store_true", default=False,
-                     help="Option to integrate multiple networks using the original GeneMANIA method where networks are weighted individually for each GO term. Only takes effect if multiple networks are present for the specified version. Must specify either this or --unweighted or --weight-swsn.")
-    group.add_option('', '--weight-swsn', action="store_true", default=False,
-                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
-    group.add_option('', '--string-combined', action="store_true", default=False,
-            help="Use only the STRING combined network: \n\tcombined_score")
-    group.add_option('', '--string-core', action="store_true", default=False,
-            help="Use only the 6 core networks: \n\t%s" % (', '.join(setup.CORE_STRING_NETWORKS)))
-    group.add_option('', '--string-non-transferred', action="store_true", default=False,
-            help="Use all non-transferred networks: \n\t%s" % (', '.join(setup.NON_TRANSFERRED_STRING_NETWORKS)))
-    group.add_option('', '--string-all', action="store_true", default=False,
-            help="Use all individual 13 STRING networks: \n\t%s" % (', '.join(setup.STRING_NETWORKS)))
-    group.add_option('-S', '--string-networks', type='string', 
-            help="Comma-separated list of string networks to use. " +
-                 "If specified, other STRING options will be ignored." +
-                 "Default: %s" % (', '.join(setup.CORE_STRING_NETWORKS)))
-    parser.add_option_group(group)
+    add_alg_opts(parser)
+    add_string_opts(parser)
 
     # additional parameters
     group = OptionGroup(parser, 'Additional options')
@@ -1176,11 +1095,104 @@ def parse_args(args):
             print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(ALGORITHMS)))
             sys.exit(1)
 
+    if 'aptrank' in opts.algorithm:
+        from aptrank.aptrank import AptRank
+
     opts.k = opts.k if opts.k is not None else [200]
     opts.t = opts.t if opts.t is not None else [2]
     opts.s = opts.s if opts.s is not None else [200]
     opts.epsUB = opts.epsUB if opts.epsUB is not None else [0]
 
+    validate_string_opts(opts)
+
+    return opts
+
+
+def add_alg_opts(parser):
+    # parameters for running algorithms
+    group = OptionGroup(parser, 'Algorithm options')
+    group.add_option('', '--unweighted', action="store_true", default=False,
+                     help="Option to ignore edge weights when running algorithms. Default=False (weighted)")
+    group.add_option('-l', '--sinksourceplus-lambda', type=float, 
+                     help="lambda parameter to specify the weight connecting the unknowns to the negative 'ground' node. Default=None")
+    group.add_option('-a', '--alpha', type=float, default=0.8,
+                     help="Alpha insulation parameter. Default=0.8")
+    group.add_option('', '--eps', type=float, default=0.0001,
+                     help="Stopping criteria for SinkSource. Default=0.0001")
+    group.add_option('', '--max-iters', type=int, default=1000,
+                     help="Maximum # of iterations for SinkSource. Default=1000")
+    # ripple/squeeze parameters
+    group.add_option('-k', '--k', type=int, action="append",
+                     help="Top-k for Ripple, Default=200")
+    group.add_option('-e', '--epsUB', type=float, action="append",
+                     help="Parameter to return the top-k if all other nodes have an UB - epsUB < the kth node's LB. Default=0")
+    group.add_option('-t', '--t', type=int, action="append",
+                     help="t parameter for Ripple. Default=2")
+    group.add_option('-s', '--s', type=int, action="append",
+                     help="s parameter for Ripple. Default=200")
+    group.add_option('', '--rank-topk', action="store_true", default=False,
+                     help="Continue iterating until the top-k nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    group.add_option('', '--rank-all', action="store_true", default=False,
+                     help="Continue iterating until all nodes ranks are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    group.add_option('', '--rank-pos-neg', action="store_true", default=False,
+                     help="During cross-validation, continue iterating until the nodes of the left out positives and negatives are fixed (comparing the UB and LB). Currently only available for SinkSourceSqueeze")
+    group.add_option('', '--compare-ranks', action="store_true", default=False,
+                     help="Compare how long it takes (# iters) for the ranks to match the final fixed ranks." +
+                     "Currently only implemented with ss_squeeze and --rank-topk, --rank-all")
+    parser.add_option_group(group)
+
+    # genemania options
+    group = OptionGroup(parser, 'GeneMANIA options')
+    group.add_option('', '--tol', type=float, default=1e-05,
+                     help="Tolerance for convergance for the Scipy Sparse Conjugate Gradient solver.")
+    parser.add_option_group(group)
+
+    # birgrank options
+    group = OptionGroup(parser, 'BirgRank options')
+    group.add_option('-b', '--obo-file', type='string', default=f_settings.GO_FILE,
+                     help="GO OBO file which contains the GO DAG. Used if running AptRank/BirgRank. Default: %s" % (f_settings.GO_FILE))
+    group.add_option('', '--theta', type=float, default=.5,
+                     help="BirgRank parameter: (1-theta) percent of Rtrain used in seeding vectors")
+    group.add_option('', '--mu', type=float, default=.5,
+                     help="BirgRank parameter: (1-mu) percent of random walkers diffuse from G via Rtrain to H")
+    parser.add_option_group(group)
+
+    # aptrank options
+    group = OptionGroup(parser, 'AptRank options')
+    group.add_option('', '--apt-k', default=8,
+                     help="Markov Chain iterations")
+    group.add_option('', '--apt-s', default=5,
+                     help="Number of shuffles")
+    group.add_option('', '--apt-t', default=0.5,
+                     help="Split percentage")
+    group.add_option('', '--diff-type', default="twoway",
+                     help="Diffusion type: oneway or twoway")
+    parser.add_option_group(group)
+
+
+def add_string_opts(parser):
+    # parameters for STRING networks
+    group = OptionGroup(parser, 'STRING options')
+    group.add_option('', '--weight-per-goterm', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the original GeneMANIA method where networks are weighted individually for each GO term. Only takes effect if multiple networks are present for the specified version. Must specify either this or --unweighted or --weight-swsn.")
+    group.add_option('', '--weight-swsn', action="store_true", default=False,
+                     help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
+    group.add_option('', '--string-combined', action="store_true", default=False,
+            help="Use only the STRING combined network: \n\tcombined_score")
+    group.add_option('', '--string-core', action="store_true", default=False,
+            help="Use only the 6 core networks: \n\t%s" % (', '.join(setup.CORE_STRING_NETWORKS)))
+    group.add_option('', '--string-non-transferred', action="store_true", default=False,
+            help="Use all non-transferred networks: \n\t%s" % (', '.join(setup.NON_TRANSFERRED_STRING_NETWORKS)))
+    group.add_option('', '--string-all', action="store_true", default=False,
+            help="Use all individual 13 STRING networks: \n\t%s" % (', '.join(setup.STRING_NETWORKS)))
+    group.add_option('-S', '--string-networks', type='string', 
+            help="Comma-separated list of string networks to use. " +
+                 "If specified, other STRING options will be ignored." +
+                 "Default: %s" % (', '.join(setup.CORE_STRING_NETWORKS)))
+    parser.add_option_group(group)
+
+
+def validate_string_opts(opts):
     # setup the selection of string networks 
     # only used if the version has STRING in it (in the fungcat_settings.py file)
     string_networks = []
@@ -1210,8 +1222,11 @@ def parse_args(args):
         if opts.weight_per_goterm and opts.weight_swsn:
             print("ERROR: cannot specify both --weight-per-goterm and --weight-swsn")
             sys.exit(1)
-
-    return opts
+    else:
+        if opts.weight_per_goterm or opts.weight_swsn:
+            print("ERROR: version %s doesn't have any multiple networks. " + \
+                  "To use the --weight-per-goterm or --weight-swsn options, please choose a version with STRING or update fungcat_settings.py")
+            sys.exit(1)
 
 
 def run():
@@ -1237,11 +1252,11 @@ def run():
         sparse_networks, network_names, prots = setup.create_sparse_net_file(
             opts.version, out_pref_net, selected_strains=selected_strains,
             string_nets=opts.string_networks, string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
-            forcenet=False)
+            forcenet=opts.forcenet)
         # TODO organize this better
         W = (sparse_networks, network_names)
     else:
-        W, prots = alg_utils.setup_sparse_network(net_file)
+        W, prots = alg_utils.setup_sparse_network(net_file, forced=opts.forcenet)
     # now build the annotation matrix
     ann_matrix, goids = setup.setup_sparse_annotations(opts.pos_neg_file, goterms, prots,
                              selected_species=None, taxon=None)
@@ -1249,12 +1264,11 @@ def run():
     # TODO make this more streamlined
     aptrank_data = None
     print("starting to run the algorithm") 
-    if 'birgrank' or 'aptrank' in opts.algorithm:
+    if 'birgrank' in opts.algorithm or 'aptrank' in opts.algorithm:
         dag_matrix, pos_matrix, dag_goids = run_birgrank.setup_h_ann_matrices(
                 prots, opts.obo_file, opts.pos_neg_file, goterms=goids)
         aptrank_data = (dag_matrix, pos_matrix, dag_goids)
 
-    
     alg_runner = Alg_Runner(
         opts.version, opts.exp_name,
         W, prots, ann_matrix, goids,
@@ -1264,7 +1278,7 @@ def run():
         unweighted=opts.unweighted, ss_lambda=opts.sinksourceplus_lambda,
         alpha=opts.alpha, eps=opts.eps, max_iters=opts.max_iters,
         k_list=opts.k, t_list=opts.t, s_list=opts.s, epsUB_list=opts.epsUB, 
-        rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos=opts.rank_pos, compare_ranks=opts.compare_ranks,
+        rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos_neg=opts.rank_pos_neg, compare_ranks=opts.compare_ranks,
         num_pred_to_write=opts.num_pred_to_write, aptrank_data=aptrank_data,
         only_cv=opts.only_cv, cross_validation_folds=opts.cross_validation_folds,
         k=opts.apt_k, s=opts.apt_s, t=opts.apt_t, diff_type=opts.diff_type,
