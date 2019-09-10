@@ -1,5 +1,11 @@
 # fungcat
 
+This repo is a backup of the old scripts I used 2017-2018 to evaluate and analyze function prediction methods for the 19 and 200 bacterial species.
+
+The new scripts are in these repos: 
+- https://github.com/jlaw9/FastSinkSource
+- https://github.com/Murali-group/function-prediction
+
 ## Setup on the bioinformatics filesystem
 The GO Annotations (GOA) files are located at `/data/inputs/goa`
 The STRING networks are located at `/data/inputs/string`
