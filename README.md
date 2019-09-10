@@ -1,6 +1,9 @@
 # fungcat
 
-This repo is a backup of the old scripts I used 2017-2018 to evaluate and analyze function prediction methods for the 19 and 200 bacterial species.
+This repo is a backup of the old scripts I used 2017-2018 to evaluate and analyze function prediction methods for the 19 and 200 bacterial species. 
+
+Here is the location where I used these scripts: 
+`/data/jeff-law/projects/fungcat/2017-10-fungcat`
 
 The new scripts are in these repos: 
 - https://github.com/jlaw9/FastSinkSource
