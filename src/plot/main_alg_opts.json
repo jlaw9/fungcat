@@ -1,0 +1,24 @@
+{
+    "main_weight_type": {
+        "sinksource": "swsn",
+        "genemania": "swsn",
+        "birgrank": "swsn",
+        "localplus": "swsn"
+    },
+    "main_alg_opts": {
+        "sinksource": "-l0-a0_95-eps0_0-maxi10",
+        "genemania": "-l0-a0_95-eps0_0-maxi20-tol1e-05",
+        "birgrank": "-l0-a0_9-eps0_0001-maxi1000-t0_5-m0_5-l0_01",
+        "localplus": "-l0-a0_95-eps0_0-maxi20"
+    },
+    "alg_name": {
+        "localplus": "Local+", 
+        "local": "Local",
+        "sinksource": "SinkSource", 
+        "sinksourceplus": "SinkSource+",
+        "genemania": "GeneMANIA",  
+        "birgrank": "BirgRank", 
+        "aptrank": "AptRank OneWay",
+        "sinksource-squeeze": "SinkSource Squeeze"
+    }
+}
