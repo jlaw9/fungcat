@@ -1,6 +1,5 @@
 
 # function to efficiently and accurately compute the top-k sinksource scores
-# Algorithm and proofs adapted from:
 # Zhang et al. Fast Inbound Top-K Query for Random Walk with Restart, KDD, 2015
 
 #import SinkSource
@@ -12,14 +11,13 @@ from collections import defaultdict
 #import networkx as nx
 import numpy as np
 #from profilehooks import profile
-from scipy.sparse import csr_matrix
+from scipy.sparse import csc_matrix, csr_matrix, csgraph
 import alg_utils
 
+class Ripple:
 
-class SinkSourceRipple:
-
-    def __init__(self, P, positives, negatives=None, k=100, t=2, s=2, a=0.8, 
-                 deltaUBLB=None, epsUB=0, verbose=False):
+    #def __init__(self, P, positives, negatives=None, k=100, t=2, s=2, a=0.8, epsUB=0, verbose=False):
+    def __init__(self, P, queryNode=10, k=100, t=2, s=2, a=0.8, epsUB=0, max_iters=1000, verbose=False):
         """
         *P*: Row-normalized sparse-matrix representation of the graph
         *f*: initial vector f of amount of score received from positive nodes
@@ -27,8 +25,9 @@ class SinkSourceRipple:
         *returns*: The set of top-k nodes, and current scores for all nodes
         """
         self.P = P
-        self.positives = positives
-        self.negatives = negatives
+        self.queryNode = queryNode
+        #self.positives = positives
+        #self.negatives = negatives
         self.k = k
         self.a = a
         self.t = t
@@ -36,31 +35,32 @@ class SinkSourceRipple:
         self.epsUB = epsUB
         #self.rank_topk = rank_topk
         #self.rank_nodes = rank_nodes
+        self.max_iters = max_iters
         self.verbose = verbose
 
         # a_h is a dictionary containing computations used in the upper bound
         self.a_h = {}
 
-    def runSinkSourceRipple(self):
-        # TODO this should be done once before all predictions are being made
-        # check to make sure the graph is normalized because making a copy can take a long time
-        #G = alg_utils.normalizeGraphEdgeWeights(G)
-        self.P, self.f, self.node2idx, self.idx2node = alg_utils.setupScores(
-            self.P, self.positives, self.negatives, a=self.a, 
-            remove_nonreachable=True, verbose=self.verbose)
-#        # if rank_nodes is specified, map those node ids to the current indices
-#        if self.rank_nodes is not None:
-#            self.rank_nodes = set(self.node2idx[n] for n in self.rank_nodes if n in self.node2idx)
+    def runRipple(self):
+        self.P, self.node2idx, self.idx2node = self.remove_nonreachable_nodes(
+            self.P, self.queryNode, verbose=True)
+
+        if False:
+            self.P, reorder_node2idx = reorder_mat_bfs(self.P, self.node2idx[self.queryNode], verbose=True)
+            self.node2idx = {i: reorder_node2idx[self.node2idx[i]] for i in self.node2idx}
+            self.idx2node = {self.node2idx[i]: i for i in self.node2idx}
+            self.P.has_sorted_indices = False
+            self.P.sort_indices()
 
         if self.verbose:
-            if self.negatives is not None:
-                print("\t%d positives, %d negatives, k=%d, t=%d, s=%d, a=%s, epsUB=%s" % (
-                    len(self.positives), len(self.negatives), self.k, self.t, self.s, str(self.a), str(self.epsUB)))
-            else:
-                print("\t%d positives, k=%d, t=%d, s=%d, a=%s, epsUB=%s" % (
-                    len(self.positives), self.k, self.t, self.s, str(self.a), str(self.epsUB)))
+                print("\tqueryNode=%s, k=%d, t=%d, s=%d, a=%s, epsUB=%s" % (
+                    self.queryNode, self.k, self.t, self.s, str(self.a), str(self.epsUB)))
+        # set the queryNode to 1
+        self.queryNode = self.node2idx[self.queryNode] 
+        self.f = np.zeros(self.P.shape[0])
+        self.f[self.queryNode] = 1
 
-        R, all_LBs = self._SinkSourceRipple()
+        R, all_LBs = self._Ripple()
         #R, all_LBs, overall_time, iters, total_comp, len_N, max_d_list = SinkSourceRipple(
         #        P, f, k=k, t=t, s=s, a=a, epsUB=epsUB)
 
@@ -69,31 +69,69 @@ class SinkSourceRipple:
         scores = defaultdict(int)
         for n in range(len(all_LBs)):
             scores[self.idx2node[n]] = all_LBs[n]
-        #scores = {self.idx2node[n]:all_LBs[n] for n in range(len(all_LBs))}
 
         if self.verbose:
-            print("SinkSourceRipple found top k after %d iterations (%0.3f total sec, %0.3f sec to update)"
+            print("Ripple found top k after %d iterations (%0.3f total sec, %0.3f sec to update)"
                   % (self.num_iters, self.total_time, self.total_update_time))
 
         return R, scores
 
-    #@profile
-    def _SinkSourceRipple(self):
+
+    def remove_nonreachable_nodes(self, P, queryNode, verbose=False):
+        """
+        """
+        #print("Initializing scores and setting up network")
+        pos_vec = np.zeros(P.shape[0])
+        pos_vec[queryNode] = 1
+        #if negatives is not None:
+        #    pos_vec[negatives] = -1
+
+        node2idx, idx2node = {i: i for i in range(P.shape[0])}, {i: i for i in range(P.shape[0])}
+
+        start = time.time()
+        # also remove nodes that aren't reachable from a positive 
+        # find the connected_components. If a component doesn't have a positive, then remove the nodes of that component
+        num_ccs, node_comp = csgraph.connected_components(P, directed=False)
+        # build a dictionary of nodes in each component
+        ccs = defaultdict(set)
+        # check to see which components have the query node in them
+        query_comp = set()
+        for n in range(len(node_comp)):
+            comp = node_comp[n]
+            ccs[comp].add(n)
+            if comp in query_comp:
+                continue
+            if n == queryNode:
+                query_comp.add(comp)
+
+        non_reachable_ccs = set(ccs.keys()) - query_comp
+        not_reachable_from_query = set(n for cc in non_reachable_ccs for n in ccs[cc])
+#        # use matrix multiplication instead
+#        reachable_nodes = get_reachable_nodes(P, positives)
+#        print(len(reachable_nodes), P.shape[0] - len(reachable_nodes))
+        if verbose:
+            print("%d nodes not reachable from a positive. Removing them from the graph" % (len(not_reachable_from_query)))
+            print("\ttook %0.4f sec" % (time.time() - start))
+
+        if len(not_reachable_from_query) > 0:
+            node2idx, idx2node = alg_utils.build_index_map(range(P.shape[0]), not_reachable_from_query)
+            # removing is slightly faster than selecting the rows
+            not_reachable_from_query = np.asarray(list(not_reachable_from_query)) 
+            P = alg_utils.delete_nodes(P, not_reachable_from_query)
+
+        return P, node2idx, idx2node
+
+
+    def _Ripple(self):
         """
         *returns*: The set of top-k nodes, and current scores for all nodes
         """
         # neighbors is an array of arrays containing the neighbors of each node
-        #node_neighbors = alg_utils.get_neighbors(P)
+        #node_neighbors = alg_utils.get_neighbors(self.P)
         # TODO check to make sure t > 0, s > 0, k > 0, 0 < a < 1 and such
         R, N, F, B, LBs, prev_LBs, UBs = self.initialize_sets()
         # easier to not use the self reference every time
         k, a, t, s = self.k, self.a, self.t, self.s
-#        if self.rank_nodes is not None:
-#            if self.verbose:
-#                print("\tRunning until the given %d nodes are ranked correctly" % (len(self.rank_nodes)))
-#            initial_unranked_nodes = unranked_nodes.copy()
-#            # TODO if the initial set of nodes to rank is really large, we may want to use another subset
-#            unranked_nodes = self.rank_nodes.copy()
 
         self.num_iters = 0
         # total number of computations performed during the update function
@@ -115,9 +153,14 @@ class SinkSourceRipple:
             if len(N) < len(R) and len(B) == 0:
                 print("Error: N < R (%d < %d) and B == 0" % (len(N), len(R)))
                 break
+            if self.num_iters >= self.max_iters:
+                print("Reached maximum # iters %d" % (self.num_iters))
+                break
 
             self.num_iters += 1
             E = self.get_top_s_boundary_nodes(B, LBs, s)
+            if self.verbose and len(E) > 0 and len(E) < 50:
+                print([self.idx2node[n] for n in E])
 
             # Update nodes in N and B
             # Updating using the node neighbors is slightly faster 
@@ -132,6 +175,7 @@ class SinkSourceRipple:
             # 2x faster for GO terms with a small # of annotations (sinksourceplus)
             LBs, prev_LBs, delta_N, comp = self.update_scores_submatrix(N, LBs, prev_LBs, a, t)
             update_time = time.process_time() - curr_time
+            #print(LBs)
 
             if self.verbose:
                 print("\t\t%0.4f sec to update bounds. delta_N: %0.2e" % (update_time, delta_N))
@@ -160,9 +204,10 @@ class SinkSourceRipple:
             #UBs = self.computeUBs(LBs, UBs, node_neighbors, 
             #        R, N, B, F, delta_N, a, t, k_score)
 
-            if F_UB < N_UB:
-                print("\t\tF_UB: %0.4f, N_UB: %0.4f" % (F_UB, N_UB))
-                continue
+            # can't remember why I had this check here
+            #if F_UB < N_UB:
+            #    print("\t\tF_UB: %0.4e, N_UB: %0.4e" % (F_UB, N_UB))
+            #    continue
 
             N_arr = np.array(list(N))
             # now check to see if there are nodes that no longer are eligible for the top-k
@@ -192,7 +237,7 @@ class SinkSourceRipple:
         for i in range(t):
             # keep track of only the amount of time it takes to do the matrix multiplication
             curr_time = time.process_time()
-            LBs = a*csr_matrix.dot(self.P, prev_LBs) + self.f
+            LBs = a*csr_matrix.dot(self.P, prev_LBs) + (1-a)*self.f
             self.total_update_time += time.process_time() - curr_time
 
             LBs[Fl] = 0
@@ -208,8 +253,9 @@ class SinkSourceRipple:
         #print("\t\tGetting subnetwork")
         N_arr = np.array(list(N))
         # get the new vicinity (N) subnetwork of P
-        P_N = alg_utils.select_nodes(self.P, N_arr)
+        #P_N = alg_utils.select_nodes(self.P, N_arr)
         P_N = self.P[N_arr,:][:,N_arr]
+        #P_N = self.P[:,N_arr][N_arr,:]
         prev_LBs_N = prev_LBs[N_arr]
         f_N = self.f[N_arr]
         #print("\t\tupdating")
@@ -219,7 +265,8 @@ class SinkSourceRipple:
         # keep track of only the amount of time it takes to do the matrix multiplication
         for i in range(t):
             curr_time = time.process_time()
-            LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + f_N
+            # RWR equation: s = aPs + (1-a)e
+            LBs_N = a*csr_matrix.dot(P_N, prev_LBs_N) + (1-a)*f_N
             self.total_update_time += time.process_time() - curr_time
 
             if i == 0:
@@ -239,22 +286,37 @@ class SinkSourceRipple:
         Compute the maximum difference of score for a given node at hop *h* away from F
         TODO See X for a proof
         """
-        # store the a and h computations to speed this up
-        if (a,h) not in self.a_h:
-            self.a_h[(a,h)] = (a**(h+1)/(1-a**2))
-        if (a,h,t) not in self.a_h:
-            self.a_h[(a,h,t)] = ((a**(h+t+1) + a**t - a**(t+2)) / (1-a-a**2+a**3))
-        hopUB = self.a_h[(a,h)]*max_boundary_score + \
-                self.a_h[(a,h,t)]*delta_N
+        c = 1 - a
+        maxBoundaryScore = float(max_boundary_score)
+        mDelta = float(delta_N)
+        mConstant = (1-c)**t
 
-        if hopUB < 0:
-            print("Debug: hopUB < 0: %0.2f. Setting to 0" % (hopUB))
-            hopUB = 0
+        # copied the two equations below directly from the ripple code
+        # http://chaozhang.org/code/ink.zip
+        # this is for the nodes in F
+        if h == 0:
+            UB = (1 - c) * (maxBoundaryScore + mConstant * mDelta / c) / (2 * c - c * c) 
+        # this is for the nodes in B
+        else:
+            UB = (1 - c) * (1 - c) / (2 * c - c * c) * maxBoundaryScore + mConstant * mDelta / (2 * c * c - c * c * c)
+
+        # these are the sinksource_ripple UB. Use the UB from ripple directly
+        # store the a and h computations to speed this up
+        #if (a,h) not in self.a_h:
+        #    self.a_h[(a,h)] = (a**(h+1)/(1-a**2))
+        #if (a,h,t) not in self.a_h:
+        #    self.a_h[(a,h,t)] = ((a**(h+t+1) + a**t - a**(t+2)) / (1-a-a**2+a**3))
+        #hopUB = self.a_h[(a,h)]*max_boundary_score + \
+        #        self.a_h[(a,h,t)]*delta_N
+
+        #if hopUB < 0:
+        #    print("Debug: hopUB < 0: %0.2f. Setting to 0" % (hopUB))
+        #    hopUB = 0
 
         #if hopUB > 1:
         #    print("Debug: hopUB > 1: %0.2f." % (hopUB))
 
-        return hopUB
+        return UB
 
     def computeUBs(self, LBs, UBs, R, N, B, F, delta_N, a, t, k_score):
         # May not offer much of a speed-up
@@ -265,7 +327,7 @@ class SinkSourceRipple:
         #max_boundary_score = max([LBs[n] for n in N & B]) if len(B) != 0 else 0
 
         if self.verbose:
-            print("\t\tk_score: %0.3f, max_boundary_score: %0.3f" % (k_score, max_boundary_score))
+            print("\t\tk_score: %0.3e, max_boundary_score: %0.3e" % (k_score, max_boundary_score))
         #F_UB = 1 
         #if len(R & F) > 0:
             # first check to see if nodes in F can be removed
@@ -278,8 +340,8 @@ class SinkSourceRipple:
         # TODO compare how giving all nodes in N an upper bound with h=1 changes results
         h = 1
         N_UB = self.computeHopUB(max_boundary_score, a, t, delta_N, h=h)
-        if self.verbose:
-            print("\t\tN_UB: %0.4f" % (N_UB))
+        #if self.verbose:
+        #    print("\t\tN_UB: %0.4f" % (N_UB))
         #for u in R & N:
         #    UBs[u] = LBs[u] + N_UB
     #    # start at boundary nodes in N
@@ -310,14 +372,14 @@ class SinkSourceRipple:
 
     def get_top_s_boundary_nodes(self, B, LBs, s):
         if len(B) > s:
-            # using arpartition gives a tiny improvement 
             # get the top s highest score nodes in B
             Bl = list(B)
             B_LBs = LBs[Bl]
             # argpartition is supposed to be faster than sorting
+            # using arpartition gives a tiny improvement 
             # see here: https://stackoverflow.com/a/23734295
-            # TODO get the right node ids after this operation
-            E = set([Bl[i] for i in np.argpartition(B_LBs, -s)[-s:]])
+            # get the s largest elements
+            E = set([Bl[idx] for idx in np.argpartition(B_LBs, -s)[-s:]])
             #print("%d nodes different" % (s - len(E & E2)))
         else:
             E = B.copy()
@@ -440,10 +502,8 @@ class SinkSourceRipple:
         # R is the set of candidate top-k nodes
         # python set operations are faster than numpy 
         R = set(range(self.P.shape[0]))
-        # Initialize the vicinity to be the nodes with a non-zero score
-        # Otherwise if a node in B (non-zero score) that's not in N has the maximum boundary score,
-        # it's score could increase after the next iteration causing the upper bound to increase
-        N = set(np.nonzero(self.f)[0].astype(int))
+        # Initialize the vicinity to be the query node
+        N = set([self.queryNode])
         # initialize F to be all nodes not in the vicinity
         F = R - N
         # Boundary nodes are nodes in N with a neighbor in F
@@ -469,3 +529,68 @@ class SinkSourceRipple:
         the max_d at each iteration, and the size of the vicinity.
         """
         return self.total_time, self.total_update_time, self.num_iters, self.total_comp, self.len_N
+
+
+def swap_rows(mat, a, b):
+    if a == b:
+        return mat
+    #mat_csc = csc_matrix(mat)
+    mat_csc = mat
+    a_idx = np.where(mat_csc.indices == a)
+    b_idx = np.where(mat_csc.indices == b)
+    mat_csc.indices[a_idx] = b
+    mat_csc.indices[b_idx] = a
+    #return mat_csc.asformat(mat.format)
+    return mat
+
+
+def swap_cols(mat, a, b):
+    if a == b:
+        return mat
+    #mat_csr = csr_matrix(mat)
+    mat_csr = mat
+    a_idx = np.where(mat_csr.indices == a)
+    b_idx = np.where(mat_csr.indices == b)
+    mat_csr.indices[a_idx] = b
+    mat_csr.indices[b_idx] = a
+    #return mat_csr.asformat(mat.format)
+    return mat
+
+
+#P2 = P.copy()
+def re_order_bfs(P, bfs, rows=True):
+    node_pos = list(range(P.shape[0]))
+    node2idx = {i:i for i in range(P.shape[0])}
+    for i, node in enumerate(bfs):
+        if rows is True:
+            P = swap_rows(P, i, node2idx[node])
+        else:
+            P = swap_cols(P, i, node2idx[node])
+        curr_pos = node2idx[node]
+        curr_pos_i = node_pos[i]
+        # move the node to i
+        node2idx[node] = i
+        # and move whatever was at position i to wherever the node was at
+        node2idx[node_pos[i]] = curr_pos
+        node_pos[i] = node
+        node_pos[curr_pos] = curr_pos_i
+    return P, node2idx
+
+
+def reorder_mat_bfs(P, queryNode, verbose=False):
+    start = time.process_time()
+    if verbose:
+        print("\tre-ordering the matrix using BFS")
+
+    # now try running BFS and re-ordering the matrix by the BFS ordering
+    bfs = csgraph.breadth_first_order(P, queryNode, return_predecessors=False)
+
+    P, node2idx = re_order_bfs(P.tocsr(), bfs, rows=False)
+    # node2idx is the same both times, so only need to return it once
+    P, _ = re_order_bfs(P.tocsc(), bfs, rows=True)
+    P = P.tocsr()
+
+    if verbose:
+        print("\ttook %0.4f sec" % (time.process_time() - start))
+    return P, node2idx
+

@@ -5,10 +5,12 @@ import os, sys
 #import matlab.engine
 #from optparse import OptionParser
 # add the folder above to the path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append('src/utils')
 import utils.file_utils as utils
 # add two folders up for fungcat settings
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.append('src')
 import fungcat_settings as f_settings
 import networkx as nx
 import pandas as pd
@@ -153,7 +155,13 @@ for h in ["P"]:
 
     # convert it to a sparse matrix and transpose it so it matches the GO DAG and G network (above)
     print("Converting the annotation table to a sparse matrix")
-    annotation_matrix = sparse.csr_matrix(table).transpose()
+    annotation_matrix = sparse.csr_matrix(table)
+    print(len(annotation_matrix.data))
+    annotation_matrix.eliminate_zeros()
+    print(len(annotation_matrix.data))
+    print(annotation_matrix.shape)
+    annotation_matrix = annotation_matrix.transpose()
+    print(annotation_matrix.shape)
     #annotation_matrix.to_csv(out_file)
     #with open(out_file, 'w') as out:
     #    for row in table:

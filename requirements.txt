@@ -4,3 +4,6 @@ scipy
 networkx
 sklearn
 tqdm
+obonet
+# required for aptrank
+cvxopt

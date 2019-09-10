@@ -3,6 +3,7 @@
 #print("Importing libraries")
 
 from optparse import OptionParser,OptionGroup
+import matlab.engine as ml_engine
 from collections import defaultdict
 import os
 import sys
@@ -31,6 +32,7 @@ import aptrank.run_birgrank as run_birgrank
 #import pandas as pd
 import networkx as nx
 from scipy import sparse
+from scipy.io import savemat
 import numpy as np
 # needed for cross-validation
 try:
@@ -39,6 +41,22 @@ except ImportError:
     pass
 #import gc
 
+
+ALGORITHMS = [
+    "sinksourceplus-ripple",  # This uses the same UB as Ripple
+    "sinksource-ripple",  # This uses the same UB as Ripple, but with negatives
+#    "sinksource-topk-ub",  # This computes UB and LB using iteration
+#    "sinksourceplus-topk-ub",  # This uses the same UB as sinksource-ub-topk
+    "sinksourceplus-squeeze",
+    "sinksource-squeeze",
+    "sinksourceplus",  # same as sinksource-ovn
+    "sinksource",  # same as sinksource-ova, but with the option of using lambda and/or alpha
+    "localplus",  # same as local-ovn, but with the option of using lambda and/or alpha
+    "local",  # same as local-ova, but with the option of using lambda and/or alpha
+    "birgrank",
+    "aptrank",
+    "genemania",
+    ]
 
 # These algorithms don't use any negative examples
 POSITIVE_ALGS = [
@@ -53,9 +71,9 @@ class Alg_Runner:
     Base class for running algorithms
     """
     def __init__(
-            self, version, exp_name,
+            self, eng, version, exp_name,
             W, prots, ann_matrix, goids,
-            algorithms=["sinksource"], weight_swsn=False, weight_gm2008=False,
+            algorithms=["sinksource"], weight_swsn=False, weight_per_goterm=False,
             unweighted=False, ss_lambda=None, 
             alpha=0.8, eps=0.0001, max_iters=1000,
             k_list=[100], t_list=[2], s_list=[50],  
@@ -70,6 +88,7 @@ class Alg_Runner:
         *eps*: Convergence cutoff for sinksource and sinksourceplus
         *aptrank_data*: tuple containing the dag_matrix, annotation matrix, and the goids of the hierarchy.
         """
+        self.eng = eng
         self.version = version
         self.exp_name = exp_name
         #self.W = W
@@ -78,7 +97,7 @@ class Alg_Runner:
         self.ann_matrix = ann_matrix
         self.goids = goids
         self.algorithms = algorithms
-        self.weight_swsn, self.weight_gm2008 = weight_swsn, weight_gm2008
+        self.weight_swsn, self.weight_per_goterm = weight_swsn, weight_per_goterm
         self.unweighted = unweighted
         self.ss_lambda = ss_lambda
         # parameters for algorithms
@@ -113,7 +132,7 @@ class Alg_Runner:
 
         #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
         # TODO handle the multiple networks more clearly
-        if (self.weight_swsn or self.weight_gm2008):
+        if (self.weight_swsn or self.weight_per_goterm):
             print("\tkeeping individual STRING networks to be weighted later")
             self.sparse_networks, self.net_names = W
             # TODO more clearly explain the option to allow for both unweighting the STRING networks 
@@ -147,6 +166,28 @@ class Alg_Runner:
                 print("\nCreating Laplacian matrix for GeneMANIA")
                 self.L = genemania.setup_laplacian(W)
 
+                # TODO should either lock this file while I'm writing/reading, or use the output prefix 
+                # store the matrix as a mat file
+                mat_net_file = "test/genemania/L-net.mat"
+                print("writing sparse matrix as mat file %s" % (mat_net_file))
+                savemat(mat_net_file, {'L': self.L})
+                # now load the mat file within matlab
+                print("loading network in matlab from mat file %s" % (mat_net_file))
+                self.eng.eval("load('%s');" % (os.path.abspath(mat_net_file)), nargout=0)
+            else:
+                if len(self.algorithms) > 1:
+                    print("Currently only able to run one algorithm at a time. Quitting.")
+                    sys.exit(1)
+                alg = self.algorithms[0]
+                # TODO should either lock this file while I'm writing/reading, or use the output prefix 
+                # store the matrix as a mat file
+                mat_net_file = "test/matlab/%s-P-net.mat" % (alg)
+                print("writing sparse matrix as mat file %s" % (mat_net_file))
+                savemat(mat_net_file, {'P': self.P})
+                # now load the mat file within matlab
+                print("loading network in matlab from mat file %s" % (mat_net_file))
+                self.eng.eval("load('%s');" % (os.path.abspath(mat_net_file)), nargout=0)
+
         # used to map from node/prot to the index and vice versa
         #self.idx2node = {i: n for i, n in enumerate(prots)}
         self.node2idx = {n: i for i, n in enumerate(prots)}
@@ -169,6 +210,10 @@ class Alg_Runner:
             print("starting running algo %s" % alg)
             self.out_dir = "%s/all/%s/%s" % (self.RESULTSPREFIX, alg, self.exp_name)
             utils.checkDir(self.out_dir)
+
+            # TODO add an option to run birgrank in prediction mode
+            if alg == 'birgrank' and self.only_cv is False:
+                continue
 
             self.out_pref = "%s/pred-%s%s" % (
                 self.out_dir, 'unw-' if self.unweighted else '',
@@ -196,7 +241,7 @@ class Alg_Runner:
                 else:
                     out_pref = "%s/cv-%dfolds-%s%sl%d-" % (self.out_dir, self.cross_validation_folds,
                         'unw-' if self.unweighted else '', 
-                        'gm2008-' if self.weight_gm2008 else '',
+                        'goterm-weight-' if self.weight_per_goterm else '',
                         0 if self.ss_lambda is None else int(self.ss_lambda))
                     cv_params_results = self.run_goterm_cv(alg,
                             folds=self.cross_validation_folds, out_pref=out_pref)
@@ -230,47 +275,6 @@ class Alg_Runner:
             return goid_scores, curr_params_results
         else:
             return
-
-    def run_birgrank_pred(self, alg, out_pref=''):
-        if alg == 'birgrank':
-            alpha, theta, mu, br_lambda = self.alpha, self.theta, self.mu, self.br_lambda
-            out_pref += 'a%s-t%s-m%s-l%s-eps%s' % (
-                str_(alpha), str_(theta), str_(mu), str_(br_lambda), str_(self.eps))
-            dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
-        elif alg == 'aptrank':
-            br_lambda, k, s, t, diff_type = self.br_lambda, self.k, self.s, self.t, self.diff_type
-            out_pref += 'l%s-k%s-s%s-t%s-%s' % (
-                str_(br_lambda), str_(k), str_(s), str_(t), diff_type)
-            dag_goids2idx = {g: i for i, g in enumerate(self.dag_goids)}
-        utils.checkDir(os.path.dirname(out_pref))
-        out_file = "%s.txt" % (out_pref)
-        # TODO specify a subset of nodes
-        # for
-        print("WARNING!!! Running on a subset of the first 1000 nodes")
-        test_nodes = list(range(1000))
-
-        # run each algorithm on these folds
-        if alg == 'birgrank' or alg == 'aptrank':
-            # the W matrix is already normalized, so I can run
-            # birgrank/aptrank from here
-            
-            Xh, params_results = self.run_aptrank_with_params(
-                self.pos_matrix, self.dag_matrix, alg=alg, nodes=test_nodes) 
-            goid_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
-
-            print("writing predicted scores to %s" % (out_file))
-            file_handle = open(out_file, 'w') 
-            # limit the scores to only the GOIDs for which we have annotations
-            for i in range(len(self.goids)):
-                goid_scores[i] = Xh[dag_goids2idx[self.goids[i]]]
-
-                if out_file is not None:
-                    # convert the nodes back to their names, and make a dictionary out of the scores
-                    scores = {self.prots[i]:s for i, s in enumerate(goid_scores[i])}
-                    self.write_scores_to_file(scores, goid=self.goids[i], file_handle=file_handle,
-                            num_pred_to_write=self.num_pred_to_write)
-            file_handle.close() 
-        return goid_scores
 
     def run_cv_all_goterms(self, alg, folds=5):
         """
@@ -433,8 +437,7 @@ class Alg_Runner:
             # try specifying more cores than there are available
             # to split the problem up into smaller chunks
             #num_cores = 12
-            #num_cores = 24
-            num_cores = 48
+            num_cores = 24
             start_time = time.process_time()
             runner = AptRank(self.P, pos_mat.transpose(), dH,
                         K=self.k, S=self.s, T=self.t, NCores=num_cores, diffusion_type=self.diff_type)
@@ -481,10 +484,8 @@ class Alg_Runner:
             goid_scores, params_results = self.run_alg_on_goterms(alg,
                     out_file=out_file)
         elif alg in ['birgrank', 'aptrank']:
-            goid_scores = self.run_birgrank_pred(alg, out_pref=out_pref)
-            params_results = {}
-            #print("WARNING: %s not yet implemented in prediction mode" % (alg))
-            #return {}, {}
+            print("WARNING: %s not yet implemented in prediction mode" % (alg))
+            return {}, {}
 
         return goid_scores, params_results
 
@@ -563,8 +564,9 @@ class Alg_Runner:
         """
         # scores from the algorithm for each goterm
         params_results = defaultdict(int)
+        #goid_scores = {}
         # store the results in a sparse matrix
-        goid_scores = sparse.lil_matrix(self.ann_matrix.shape, dtype=np.float)
+        goid_scores = sparse.csr_matrix(self.ann_matrix.shape, dtype=np.float)
         try:
             if out_file is not None:
                 if self.forcealg is False and os.path.isfile(out_file):
@@ -604,11 +606,6 @@ class Alg_Runner:
             for i in tqdm(range(self.ann_matrix.shape[0]), total=self.ann_matrix.shape[0], disable=not self.progress_bar):
                 goid = self.goids[i]
                 positives, negatives = alg_utils.get_goid_pos_neg(self.ann_matrix, i)
-                # if there are more annotations than nodes in the networkx, then trim the extra pos/neg nodes
-                num_nodes = self.P.shape[0] if self.weight_gm2008 is False else self.normalized_nets[0].shape[0]
-                if len(self.prots) > num_nodes: 
-                    positives = positives[np.where(positives < num_nodes)]
-                    negatives = negatives[np.where(negatives < num_nodes)]
                 # get the row corresponding to the current goids annotations 
                 # TODO This cutoff should either be a parameter or handled elsewhere 
                 if len(positives) < 10:
@@ -617,13 +614,13 @@ class Alg_Runner:
                     continue
 
                 #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
-                if self.weight_gm2008 is True:
+                if self.weight_per_goterm is True:
                     start_time = time.process_time()
                     y = np.zeros(self.normalized_nets[0].shape[0])
                     y[positives] = 1
                     y[negatives] = -1
                     # weight the network for each GO term individually
-                    W = setup.weight_GM2008(y, self.normalized_nets, self.net_names, goid)
+                    W = setup.weight_net_goterm(y, self.normalized_nets, self.net_names, goid)
                     self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
                     if alg == 'genemania':
                         self.L = genemania.setup_laplacian(W)
@@ -635,7 +632,6 @@ class Alg_Runner:
                     pos, neg = alg_utils.get_goid_pos_neg(self.rank_pos_neg, i)
                     rank_pos_neg = (set(pos), set(neg))
 
-
                 scores_arr, curr_params_results, ss_squeeze = self.run_alg(alg, positives, negatives, 
                         a=a, eps=eps, k=k, t=t, s=s, epsUB=epsUB, goid=goid, rank_pos_neg=rank_pos_neg)
                 # storing all of the scores for each goterm takes a lot of memory
@@ -645,9 +641,6 @@ class Alg_Runner:
                 ## build an array of the scores and set it in the goid sparse matrix of scores
                 #scores_arr = np.zeros(goid_scores.shape[1])
                 #scores_arr[list(indices)] = list(score_list)
-                # if they're different dimensions, then set the others to zeros 
-                if len(scores_arr) < goid_scores.shape[1]:
-                    scores_arr = np.append(scores_arr, [0]*(goid_scores.shape[1] - len(scores_arr)))
                 goid_scores[i] = scores_arr
                 for key in curr_params_results:
                     params_results[key] += curr_params_results[key]
@@ -718,7 +711,7 @@ class Alg_Runner:
         # This uses the same UB as Ripple
         if alg in ['sinksourceplus', 'sinksource']:
             scores, process_time, wall_time, iters, comp = sinksource.runSinkSource(
-                self.P, positives, negatives=negatives, max_iters=self.max_iters,
+                self.eng, self.P, positives, negatives=negatives, max_iters=self.max_iters,
                 eps=eps, a=a, verbose=self.verbose)
             update_time = '-'
             params_results["%s_wall_time"%alg] = wall_time
@@ -730,7 +723,7 @@ class Alg_Runner:
             y = np.zeros(self.P.shape[0])
             y[positives] = 1
             y[negatives] = -1
-            scores, process_time, wall_time, iters = genemania.runGeneMANIA(self.L, y, tol=self.tol, verbose=self.verbose)
+            scores, process_time, wall_time, iters = genemania.runGeneMANIA(self.eng, self.L, y, tol=self.tol, verbose=self.verbose)
             update_time, comp = [-1, -1]
             params_results["%s_wall_time"%alg] = wall_time
         elif alg in ['sinksourceplus-squeeze', 'sinksource-squeeze']:
@@ -852,7 +845,7 @@ class Alg_Runner:
             # store all of the prediction scores from each fold in a list
             combined_fold_scores = np.zeros(self.P.shape[0], dtype='float128')
             #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
-            if self.weight_gm2008 is True:
+            if self.weight_per_goterm is True:
                 unknowns = set(range(self.normalized_nets[0].shape[0])) - set(positives) 
             else:
                 unknowns = set(range(self.P.shape[0])) - set(positives) 
@@ -871,7 +864,7 @@ class Alg_Runner:
 
                 # 
                 #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[self.version] and not self.unweighted:
-                if self.weight_gm2008 is True:
+                if self.weight_per_goterm is True:
                     y = np.zeros(self.normalized_nets[0].shape[0])
                     y[pos_train] = 1
                     y[neg_train] = -1
@@ -880,7 +873,7 @@ class Alg_Runner:
                     #        net_names=self.net_names, out_file=out_file, nodes=prots)
                     # TODO add an option for this
                     # for now, weight the network for each GO term individually
-                    W = setup.weight_GM2008(y, self.normalized_nets, self.net_names, goid)
+                    W = setup.weight_net_goterm(y, self.normalized_nets, self.net_names, goid)
                     self.P = alg_utils.normalizeGraphEdgeWeights(W, ss_lambda=self.ss_lambda)
                     if alg == 'genemania':
                         self.L = genemania.setup_laplacian(W)
@@ -1029,7 +1022,7 @@ class Alg_Runner:
             goid = list(goid_prec_rec.keys())[0]
             out_file_pr = out_file.replace('.txt', "prec-rec%s%s.txt" % (
                 taxon, '-%s'%(goid) if len(goid_prec_rec) == 1 else ""))
-            print("writing prec/rec to %s" % (out_file_pr))
+            print("writing prec/rec to %s" % (out_file))
             with open(out_file_pr, 'w') as out:
                 out.write("goid\tprec\trec\tnode\tscore\tidxpos/neg\n")
                 for goid, (prec, rec, pos_neg_stats) in goid_prec_rec.items():
@@ -1061,13 +1054,13 @@ def parse_args(args):
 
     # general parameters
     group = OptionGroup(parser, 'Main Options')
-    group.add_option('','--version', type='string', default="2018_06-seq-sim-e0_1",
-                     help="Version of the PPI to run. Default: %s" % ("2018_06-seq-sim-e0_1") + \
+    group.add_option('','--version', type='string', default="2018_06-seq-sim-e1e-25",
+                     help="Version of the PPI to run. Default: %s" % ("2018_06-seq-sim-e1e-25") + \
                      "\nOptions are: %s." % (', '.join(f_settings.ALLOWEDVERSIONS)))
     group.add_option('-N','--net-file', type='string',
                      help="Network file to use. Default is the version's default network")
     group.add_option('-A', '--algorithm', action="append",
-                     help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(alg_utils.ALGORITHMS)))
+                     help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(ALGORITHMS)))
     group.add_option('', '--exp-name', type='string',
                      help="Experiment name to use when running GAIN.")
     #group.add_option('', '--pos-neg-file', type='string', action='append',
@@ -1114,7 +1107,7 @@ def parse_args(args):
 #        sys.exit(1)
 
     if opts.algorithm is None:
-        opts.algorithm = alg_utils.ALGORITHMS
+        opts.algorithm = ALGORITHMS
 
     if opts.version not in f_settings.ALLOWEDVERSIONS:
         print("ERROR: '%s' not an allowed version. Options are: %s." % (opts.version, ', '.join(f_settings.ALLOWEDVERSIONS)))
@@ -1126,8 +1119,8 @@ def parse_args(args):
 
     # TODO
     for alg in opts.algorithm:
-        if alg not in alg_utils.ALGORITHMS:
-            print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(alg_utils.ALGORITHMS)))
+        if alg not in ALGORITHMS:
+            print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(ALGORITHMS)))
             sys.exit(1)
 
     if 'aptrank' in opts.algorithm:
@@ -1210,7 +1203,7 @@ def add_alg_opts(parser):
 def add_string_opts(parser):
     # parameters for STRING networks
     group = OptionGroup(parser, 'STRING options')
-    group.add_option('', '--weight-gm2008', action="store_true", default=False,
+    group.add_option('', '--weight-per-goterm', action="store_true", default=False,
                      help="Option to integrate multiple networks using the original GeneMANIA method where networks are weighted individually for each GO term. Only takes effect if multiple networks are present for the specified version. Must specify either this or --unweighted or --weight-swsn.")
     group.add_option('', '--weight-swsn', action="store_true", default=False,
                      help="Option to integrate multiple networks using the SWSN (Simultaneous Weighting with Specific Negatives) method. Only takes effect if multiple networks are present for the specified version. Default=False (integrate the networks for each GO term individually).")
@@ -1233,15 +1226,12 @@ def validate_string_opts(opts):
     # setup the selection of string networks 
     # only used if the version has STRING in it (in the fungcat_settings.py file)
     string_networks = []
-    # if none are specified, leave the list empty. Useful to keep the same set of nodes (i.e., for validation), but not include the STRING networks
-    if opts.string_networks == "":
-        pass
-    elif opts.string_networks is not None:
+    if opts.string_networks:
         string_networks = opts.string_networks.split(',')
         for net in string_networks:
             if net not in setup.STRING_NETWORKS:
-                print("ERROR: STRING network '%s' not one of the" % (net) + 
-                      "available choices which are: \n\t%s" % (', '.join(setup.STRING_NETWORKS)))
+                print("ERROR: STRING network '%s' not one of the" +
+                      "available choices which are: \n\t%s" % (net, ', '.join(setup.STRING_NETWORKS)))
                 sys.exit(1)
     elif opts.string_combined:
         string_networks = ['combined_score']
@@ -1256,26 +1246,43 @@ def validate_string_opts(opts):
     opts.string_networks = string_networks
 
     if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version]: 
-        # if a net_file is specified, then no need to specify the weight type
-        if (not opts.net_file or not os.path.isfile(opts.net_file)) and (not opts.weight_gm2008 and not opts.weight_swsn and not opts.unweighted):
-            print("ERROR: must specify either --weight-gm2008, --weight-swsn or --unweighted")
+        if not opts.weight_per_goterm and not opts.weight_swsn and not opts.unweighted:
+            print("ERROR: must specify either --weight-per-goterm, --weight-swsn or --unweighted")
             sys.exit(1)
-        if opts.weight_gm2008 and opts.weight_swsn:
-            print("ERROR: cannot specify both --weight-gm2008 and --weight-swsn")
-            sys.exit(1)
-        if (opts.net_file and os.path.isfile(opts.net_file)) and (opts.weight_gm2008 or opts.weight_swsn):
-            print("ERROR: --net-file is selected. Cannot use --weight-gm2008 or --weight-swsn")
+        if opts.weight_per_goterm and opts.weight_swsn:
+            print("ERROR: cannot specify both --weight-per-goterm and --weight-swsn")
             sys.exit(1)
     else:
-        if opts.weight_gm2008 or opts.weight_swsn:
+        if opts.weight_per_goterm or opts.weight_swsn:
             print("ERROR: version %s doesn't have any multiple networks. " + \
-                  "To use the --weight-gm2008 or --weight-swsn options, please choose a version with STRING or update fungcat_settings.py")
+                  "To use the --weight-per-goterm or --weight-swsn options, please choose a version with STRING or update fungcat_settings.py")
             sys.exit(1)
+
+
+def get_matlab_engine():
+    # have to manually start a shared matlab session to share a session across multiple python instances
+    # for now, just start a matlab instance each time
+    #print("Starting matlab engine")
+    #eng = ml_engine.start_matlab()
+    #return eng
+    sessions = ml_engine.find_matlab()
+    if len(sessions) > 0:
+        print("Connecting to matlab session %s" % (sessions[0]))
+    else:
+        print("Starting new matlab engine")
+    eng = ml_engine.connect_matlab()
+    ##eng.eval("x = 4;", nargout=0)
+    #print(eng.workspace['x'])
+    #eng.workspace['y'] = 5
+    #sys.exit()
+    return eng
 
 
 def run():
     #versions = ["2017_10-seq-sim", "2017_10-seq-sim-x5-string"]
     opts = parse_args(sys.argv)
+
+    eng = get_matlab_engine()
     goterms = alg_utils.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
 
@@ -1283,31 +1290,30 @@ def run():
     # load the network matrix and protein IDs
     net_file = opts.net_file
     if net_file is None:
+    #    _, _, net_file, _ = f_settings.set_version(opts.version) 
+    #else:
         INPUTSPREFIX, _, net_file, selected_strains = f_settings.set_version(opts.version) 
-    else:
-        INPUTSPREFIX, _, _, selected_strains = f_settings.set_version(opts.version) 
     # TODO this should be better organized so that any STRING networks
     # can be used
     #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
-    if opts.weight_gm2008 or opts.weight_swsn:
-        # if net_file is specified, but it doesn't exist, then write it
-        if net_file is not None and not os.path.isfile(net_file):
-            print("Option to write net file not yet implemented. Quitting")
-            sys.exit(1)
-        out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
-        utils.checkDir(out_pref_net)
-        # build the file containing the sparse networks
-        sparse_networks, network_names, prots = setup.create_sparse_net_file(
-            opts.version, out_pref_net, selected_strains=selected_strains,
-            string_nets=opts.string_networks, string_file_cutoff=f_settings.VERSION_STRING_FILE_CUTOFF[opts.version],
-            string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
-            forcenet=opts.forcenet)
-        # TODO organize this better
-        W = (sparse_networks, network_names)
+    if opts.weight_per_goterm or opts.weight_swsn:
+        print("not yet implemented for matlab. quitting")
+        sys.exit()
+#        out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
+#        utils.checkDir(out_pref_net)
+#        # build the file containing the sparse networks
+#        sparse_networks, network_names, prots = setup.create_sparse_net_file(
+#            opts.version, out_pref_net, selected_strains=selected_strains,
+#            string_nets=opts.string_networks, string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
+#            forcenet=opts.forcenet)
+#        # TODO organize this better
+#        W = (sparse_networks, network_names)
     else:
         W, prots = alg_utils.setup_sparse_network(net_file, forced=opts.forcenet)
+    #sys.exit()
     # now build the annotation matrix
     ann_matrix, goids = setup.setup_sparse_annotations(opts.pos_neg_file, goterms, prots)
+    # TODO store the matrix to a mat file, then load it into matlab
 
     # TODO make this more streamlined
     aptrank_data = None
@@ -1318,11 +1324,11 @@ def run():
         aptrank_data = (dag_matrix, pos_matrix, dag_goids)
 
     alg_runner = Alg_Runner(
-        opts.version, opts.exp_name,
+        eng, opts.version, opts.exp_name,
         W, prots, ann_matrix, goids,
         #goid_pos, goid_neg, goterms, opts.net_file, opts.algorithm,
         algorithms=opts.algorithm, weight_swsn=opts.weight_swsn,
-        weight_gm2008=opts.weight_gm2008,
+        weight_per_goterm=opts.weight_per_goterm,
         unweighted=opts.unweighted, ss_lambda=opts.sinksourceplus_lambda,
         alpha=opts.alpha, eps=opts.eps, max_iters=opts.max_iters, tol=opts.tol,
         k_list=opts.k, t_list=opts.t, s_list=opts.s, epsUB_list=opts.epsUB, 

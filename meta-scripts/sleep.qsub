@@ -1,0 +1,6 @@
+#PBS -l nodes=1:ppn=23,walltime=240:00:00
+#PBS -N sleep-2
+
+# this qsub script makes it so I can specify a job with 1 core (ppn), and fill up the rest of the cores with a sleeping job
+# sleep for 12 hrs to make sure everything with 1 core finishes
+sleep 43200

@@ -10,7 +10,8 @@ from tqdm import tqdm
 import utils.file_utils as utils
 
 
-def open_file_to_write(out_file, out_handle, for_gain=False):
+def open_file_to_write(out_file, out_handle, for_gain=False, write_gzip=True):
+    out_file = out_file + '.gz' if write_gzip else out_file
     if not os.path.isfile(out_file):
         tqdm.write("Writing new species annotations to '%s'" % (out_file))
     else:
@@ -23,7 +24,8 @@ def open_file_to_write(out_file, out_handle, for_gain=False):
         write_header = True
 
     # the file is not in order by species, so we will need to append to the currently existing file
-    out_handle = open(out_file, 'a')
+    out_handle = gzip.open(out_file, 'ab') if write_gzip else open(out_file, 'a')
+
     if write_header is True:
         if for_gain is True:
             # header line for gain
@@ -48,11 +50,13 @@ def main(args):
     usage = '%s [options]\n' % (sys.argv[0])
     parser = OptionParser(usage=usage)
     parser.add_option('-i', '--goa-annotations', 
-                      help="File containing goa annotations downloaded from UniProt in GAF format")
+                      help="File containing goa annotations downloaded from UniProt in GAF format. Should be compressed with gzip (i.e., ends with .gz)")
     parser.add_option('-o', '--out-dir', type='string', metavar='STR',
-                      help="Directory to write the interactions of each species to.")
-    parser.add_option('-s', '--selected-strains', type='string', default='inputs/selected-strains/selected-strains.txt',
-                      help="Uniprot reference proteome strains to perform analyses on")
+                      help="Directory to write the annotations of each species to.")
+    parser.add_option('-s', '--selected-strains', type='string',
+                      help="Uniprot reference proteome strains for which to write the individual files")
+    parser.add_option('-z', '--gzip', action="store_true", default=False,
+                      help="Write gzip files for each individual species.")
     parser.add_option('-g', '--for-gain', action="store_true", default=False,
                       help="Also write the file formatted to use as input for GAIN")
 
@@ -62,7 +66,9 @@ def main(args):
         sys.exit("--goa-annotations (-i) and --out-dir (-o) required")
 
     #selected_strains_file = "inputs/selected-strains.txt"
-    selected_strains = utils.readItemSet(opts.selected_strains, 1)
+    selected_strains = None 
+    if opts.selected_strains is not None:
+        selected_strains = utils.readItemSet(opts.selected_strains, 1)
 
     last_taxon = ""
     # initialize output file handle variables
@@ -75,8 +81,9 @@ def main(args):
             total_lines = 408333951
         elif 'gcrp' in opts.goa_annotations:
             total_lines = 137704163
-        for line in tqdm(f, total=total_lines):
-            if line == '' or line[0] == '!':
+        for orig_line in tqdm(f, total=total_lines):
+            line = orig_line.decode('UTF-8')
+            if line.rstrip() == '' or line[0] == '!':
                 continue
 
             # columns of this file are explained in the README: ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/README and http://geneontology.org/page/go-annotation-file-gaf-format-21
@@ -105,7 +112,7 @@ def main(args):
             #    continue
             curr_taxon = cols[12].split(':')[-1]
 
-            if curr_taxon not in selected_strains:
+            if selected_strains is not None and curr_taxon not in selected_strains:
                 #print "Skipping taxon %s" % (curr_taxon)
                 #print line
                 #sys.exit()
@@ -113,12 +120,10 @@ def main(args):
 
             if curr_taxon != last_taxon:
                 out_dir = "%s/%s" % (opts.out_dir, curr_taxon)
-                # analagous to mkdir -p directory from the command line
-                if not os.path.isdir(out_dir):
-                    os.makedirs(out_dir)
+                utils.checkDir(out_dir)
                 # write annotations of the new species to the given file
                 out_file = "%s/%s-goa.gaf" % (out_dir, curr_taxon)
-                out = open_file_to_write(out_file, out)
+                out = open_file_to_write(out_file, out, write_gzip=opts.gzip)
                 if opts.for_gain is True:
                     out_file_gain = "%s/%s-goa-for-gain.txt" % (out_dir, curr_taxon)
                     out_gain = open_file_to_write(out_file_gain, out_gain, for_gain=opts.for_gain)
@@ -127,11 +132,14 @@ def main(args):
                 #count = 0
 
             # write the entire line to the species-specific file
-            out.write(line)
+            if opts.gzip:
+                out.write(orig_line)
+            else:
+                out.write(line)
 
             if opts.for_gain:
                 # columns described in open_file_to_write()
-                orf = cols[1]
+                orf = cols[1]  # orf is the uniprot ID
                 goid = cols[4]
                 hierarchy = cols[8]
                 evidencecode = cols[6]

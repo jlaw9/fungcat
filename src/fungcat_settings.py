@@ -11,18 +11,28 @@ import socket
 #        - version2
 
 SEQ_SIM_NETWORKS = {
-    "2017_10-seq-sim": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2017_10-seq-sim-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2017_10-seq-sim-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2017_10-seq-sim-x5-string-14": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2017_10-seq-sim-x5-string": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2017_10-seq-sim-string-swsn": "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
-    "2018_06-seq-sim-e1e-25-string": "inputs/2018_06-seq-sim-e1e-25/2018_06-seq-sim-e1e-25-net.txt",
-    "2018_06-seq-sim-e0_1-string": "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
+    "2017_10-seq-sim":                   "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-14":                "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-string":            "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-x5-string-14":      "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-x5-string":         "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    "2017_10-seq-sim-string-swsn":       "inputs/protein-similarity/2017-10-08-shiv-similarity-network-uniprot.txt",
+    # these have a STRING cutoff of 0.4
+    "2018_06-seq-sim-e1e-25-string":     "inputs/2018_06-seq-sim-e1e-25/2018_06-seq-sim-e1e-25-net.txt",
+    "2018_06-seq-sim-e0_1-string":       "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
+    "2018_06-seq-sim-e1e-25-string-150": "inputs/2018_06-seq-sim-e1e-25/2018_06-seq-sim-e1e-25-net.txt",
+    "2018_06-seq-sim-e0_1-string-150":   "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
+    "2018_06-seq-sim-e1e-25-string-700": "inputs/2018_06-seq-sim-e1e-25/2018_06-seq-sim-e1e-25-net.txt",
+    "2018_06-seq-sim-e0_1-string-700":   "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
+    "2018_06-seq-sim-e0_1-string-900":   "inputs/2018_06-seq-sim-e0_1/2018_06-seq-sim-e0_1-net.txt",
     }
 # I already built these using a little bash script in each version's directory
-for cutoff in ["1e-50", "1e-25", "1e-15","1e-10", "1e-6", "1e-4", "0_1"]:
+for cutoff in ["1e-50", "1e-25", "1e-15","1e-10", "1e-6", "1e-4", "0_1", "5", "20", "50"]:
     SEQ_SIM_NETWORKS["2018_06-seq-sim-e%s"%cutoff] = "inputs/2018_06-seq-sim-e%s/2018_06-seq-sim-e%s-net.txt" % (cutoff, cutoff)
+
+for cutoff in ["1e-25", "0_1"]:
+    SEQ_SIM_NETWORKS["2018_09-s200-seq-sim-e%s"%cutoff] = "inputs/2018_09-s200-seq-sim-e%s/2018_09-s200-seq-sim-e%s-net.txt" % (cutoff, cutoff)
+
 
 NETWORK_VERSION_INPUTS = {
     "2017_10-seq-sim": ['SEQ_SIM'],
@@ -41,8 +51,18 @@ NETWORK_VERSION_INPUTS = {
     "2018_06-seq-sim-e1e-4": ['SEQ_SIM'],
     "2018_06-seq-sim-e0_01": ['SEQ_SIM'],
     "2018_06-seq-sim-e0_1": ['SEQ_SIM'],
+    "2018_06-seq-sim-e5": ['SEQ_SIM'],
+    "2018_06-seq-sim-e20": ['SEQ_SIM'],
+    "2018_06-seq-sim-e50": ['SEQ_SIM'],
     "2018_06-seq-sim-e1e-25-string": ['SEQ_SIM', 'STRING'],
     "2018_06-seq-sim-e0_1-string": ['SEQ_SIM', 'STRING'],
+    "2018_06-seq-sim-e1e-25-string-150": ['SEQ_SIM', 'STRING'],
+    "2018_06-seq-sim-e0_1-string-150": ['SEQ_SIM', 'STRING'],
+    "2018_06-seq-sim-e1e-25-string-700": ['SEQ_SIM', 'STRING'],
+    "2018_06-seq-sim-e0_1-string-700": ['SEQ_SIM', 'STRING'],
+    "2018_06-seq-sim-e0_1-string-900": ['SEQ_SIM', 'STRING'],
+    "2018_09-s200-seq-sim-e1e-25": ['SEQ_SIM'],
+    "2018_09-s200-seq-sim-e0_1": ['SEQ_SIM'],
     }
 
 ALLOWEDVERSIONS = sorted(NETWORK_VERSION_INPUTS.keys())
@@ -69,8 +89,10 @@ for version in ALLOWEDVERSIONS:
     VERSION_SELECTED_STRAINS[version] = 'inputs/selected-strains.txt' 
 for version in ["2017_10-seq-sim-14", "2017_10-seq-sim-x5-string-14", "2017_10-string-14"]:
     VERSION_SELECTED_STRAINS[version] = 'inputs/selected-strains/selected-strains-14.txt'
+for version in ["2018_09-s200-seq-sim-e1e-25", "2018_09-s200-seq-sim-e0_1"]:
+    VERSION_SELECTED_STRAINS[version] = 'inputs/selected-strains/2018-09-12-strains-200.txt'
     #"2018_02-seq-sim": "inputs/selected-strains/2018_02-strains-14.txt",
-# TODO this should be removed
+# TODO only a couple scripts still use this. should be removed
 SELECTED_STRAINS = "inputs/selected-strains.txt"
 
 ALGORITHM_OPTIONS = {
@@ -96,7 +118,7 @@ NAME_TO_SHORTNAME = {
     "Clostridium botulinum A str. Hall"                         : "Cb",
     "Acinetobacter baumannii"                                   : "Ab",
     "Staphylococcus aureus"                                     : "Sa",
-    "Vibrio cholerae O1 biovar El Tor str. N16961"              : "Bc",
+    "Vibrio cholerae O1 biovar El Tor str. N16961"              : "Vc",
     "Yersinia pestis"                                           : "Yp",
     "Streptococcus pyogenes"                                    : "Sp",
     "Pseudomonas aeruginosa"                                    : "Pa",
@@ -129,12 +151,12 @@ NAME_TO_TAX = {}
 TAX_TO_NAME = {}
 
 GOA_DIR = "/data/inputs/goa"
-GOA_TAXON_DIR = "%s/taxon" % (GOA_DIR)
+GOA_TAXON_DIR = "%s/2017_09/taxon" % (GOA_DIR)
 
 # input files
-GO_FILE = "%s/2017-09-26-go.obo" % (GOA_DIR)
-GOA_FILE = "%s/2017-09-26-goa_uniprot_all.gaf.gz" % (GOA_DIR)
-GO_FILE_NOPARTOF = "%s/2017-09-26-go-nopartof.obo" % (GOA_DIR)
+GO_FILE = "%s/2017_09/2017-09-26-go.obo" % (GOA_DIR)
+GOA_FILE = "%s/2017_09/2017-09-26-goa_uniprot_all.gaf.gz" % (GOA_DIR)
+GO_FILE_NOPARTOF = "%s/2017_09/2017-09-26-go-nopartof.obo" % (GOA_DIR)
 
 # parsed input files
 # for example: inputs/goa/taxon/22839/22839-goa.gaf
@@ -160,7 +182,22 @@ STRING_TO_UNIPROT = "%s/full_uniprot_2_string.04_2015.tsv" % (STRING_DIR)
 # cutoff to be used for the STRING interactions
 # Ranges from 150-1000
 # 400 is considered a "Medium" cutoff
-STRING_CUTOFF = 400
+#STRING_CUTOFF = 400
+VERSION_STRING_CUTOFF = {}
+for version in ALLOWEDVERSIONS:
+    if 'STRING' in NETWORK_VERSION_INPUTS[version]:
+        VERSION_STRING_CUTOFF[version] = 400
+# To use a different cutoff, need to call string_split_to_species.py
+for version in ["2018_06-seq-sim-e1e-25-string-150", "2018_06-seq-sim-e0_1-string-150"]:
+    VERSION_STRING_CUTOFF[version] = 150
+for version in ["2018_06-seq-sim-e1e-25-string-700", "2018_06-seq-sim-e0_1-string-700"]:
+    VERSION_STRING_CUTOFF[version] = 700
+# useful to use a higher cutoff from a different file
+# I should really just keep a file with the lowest cutoff, and then use the cutoff to filter edges from that file
+VERSION_STRING_FILE_CUTOFF = VERSION_STRING_CUTOFF.copy()
+for version in ["2018_06-seq-sim-e1e-25-string-900", "2018_06-seq-sim-e0_1-string-900"]:
+    VERSION_STRING_FILE_CUTOFF[version] = 400 
+    VERSION_STRING_CUTOFF[version] = 900
 
 # Template for a species/taxon STRING file
 # Last number is the cutoff used on interactions in this file
@@ -182,6 +219,8 @@ for version in ALLOWEDVERSIONS:
         VERSION_UNIPROT_TO_SPECIES[version] = "inputs/protein-similarity/2018_06/2018-06-14-uniprot-19-strains-plus-string.tab"
     elif '2017_10' in version:
         VERSION_UNIPROT_TO_SPECIES[version] = "inputs/protein-similarity/uniprot-species/2017-10-17-uniprot-prots-19-species-plus-string.tab"
+    elif '2018_09' in version:
+        VERSION_UNIPROT_TO_SPECIES[version] = "inputs/protein-similarity/2018_09/2018-09-12-uniprot-200-strains-prots-plus-string.tab"
 VERSION_UNIPROT_TO_STRING = VERSION_UNIPROT_TO_SPECIES
 
 # The epsilon value (convergence criteria for SinkSource and GeneMANIA) is hard-coded, 

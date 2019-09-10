@@ -10,6 +10,7 @@ __author__ = "Jeff Law"
 
 # citation:
 #Youngs, N., Penfold-Brown, D., Drew, K., Shasha, D., & Bonneau, R., Parametric bayesian priors and better choice of negative examples improve protein function prediction, Bioinformatics, 29(9), 1190-1198 (2013).  http://dx.doi.org/10.1093/bioinformatics/btt110
+# see http://bonneaulab.bio.nyu.edu/funcprop.html for the original matlab code
 
 
 def combineNetworksSWSN(y, W):
@@ -42,7 +43,7 @@ def combineNetworksSWSN(y, W):
         neg_idx = np.where(curr_y < 0)[0]
         num_pos = len(pos_idx)
         num_neg = len(neg_idx)
-        print("%d pos, %d neg" % (num_pos, num_neg))
+        #print("%d pos, %d neg" % (num_pos, num_neg))
         num_labeled = num_pos + num_neg
 
         # a few checks on the arguments

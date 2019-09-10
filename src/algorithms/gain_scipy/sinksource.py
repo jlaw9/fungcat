@@ -42,7 +42,7 @@ if use_numba:
 
 # old option: *scores*: rather than start from scratch, we can start from a previous run's (or different GO term's) scores
 def SinkSource_scipy(P, f, max_iters=1000, eps=0.0001, a=0.8, verbose=False):
-    """ Iterate over the graph until all of the scores of the unknowns have converged
+    """ Power iteration until all of the scores of the unknowns have converged
     *max_iters*: maximum number of iterations
     *eps*: Epsilon convergence cutoff. If the maximum node score change from one iteration to the next is < *eps*, then stop
     *a*: alpha is the insulation parameter

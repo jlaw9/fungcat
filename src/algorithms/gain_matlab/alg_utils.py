@@ -2,6 +2,7 @@
 import os, sys
 from scipy import sparse
 from scipy.sparse import csr_matrix, csgraph
+from scipy.io import savemat
 import numpy as np
 import networkx as nx
 from collections import defaultdict
@@ -10,66 +11,10 @@ from tqdm import tqdm
 sys.path.append("src")
 import utils.file_utils as utils
 # needed for evaluation metrics
-try:
-    from sklearn import metrics
-except ImportError:
-    print("WARNING: Unable to import sklearn")
-    pass
-
-
-ALGORITHMS = [
-    "sinksourceplus-ripple",  # This uses the same UB as Ripple
-    "sinksource-ripple",  # This uses the same UB as Ripple, but with negatives
-#    "sinksource-topk-ub",  # This computes UB and LB using iteration
-#    "sinksourceplus-topk-ub",  # This uses the same UB as sinksource-ub-topk
-    "sinksourceplus-squeeze",
-    "sinksource-squeeze",
-    "sinksourceplus",  # same as sinksource-ovn
-    "sinksource",  # same as sinksource-ova, but with the option of using lambda and/or alpha
-    "localplus",  # same as local-ovn, but with the option of using lambda and/or alpha
-    "local",  # same as local-ova, but with the option of using lambda and/or alpha
-    "birgrank",
-    "aptrank",
-    "genemania",
-    "ripple",
-    ]
-
-def str_(s):
-    return str(s).replace('.','_')
-# TODO use kwargs instead of opts to be more general
-def get_filepath_helper(version='', alg='', exp_name='', 
-                 exp_type='loso', postfix='', **kwargs):
-    # setup the right weight_str for the filepath
-    weight_str = '%s%s%s' % (
-        '-unw' if kwargs['unweighted'] else '', 
-        '-gm2008' if kwargs['weight_gm2008'] else '',
-        '-swsn' if kwargs['weight_swsn'] else '')
-    return get_filepath(version, alg, exp_name, weight_str=weight_str,
-                 exp_type=exp_type, postfix=postfix, **kwargs) 
-
-
-def get_filepath(version='', alg='', exp_name='', weight_str='',
-                 exp_type='loso', postfix='', **kwargs):
-    """ Get the path to a output file given the algorithm and options used
-    *exp_type*: can be either 'loso', 'pred', or cv-Xfolds
-    *postfix*: added right before the .txt at the end
-    *kwargs*: all weight options and algorihtm options are needed
-    """
-    out_file = "outputs/%s/all/%s/%s/%s%s-l%d-a%s-eps%s-maxi%d%s%s%s%s.txt" % (
-        version, alg, exp_name, exp_type, weight_str,
-        0 if kwargs['sinksourceplus_lambda'] is None else kwargs['sinksourceplus_lambda'],
-        str_(kwargs['alpha']), str_(kwargs['eps']), kwargs['max_iters'],
-        '-t%s-m%s-l%s' % (
-            str_(kwargs['theta']), str_(kwargs['mu']),
-            str_(kwargs['br_lambda'])) if alg == 'birgrank' else '',
-        '-l%s-k%s-s%s-t%s-%s' % (
-            str_(kwargs['br_lambda']), str_(kwargs['apt_k']),
-            str_(kwargs['apt_s']), str_(kwargs['apt_t']),
-            kwargs['diff_type']) if alg == 'aptrank' else '',
-        '-tol%s' % (str_(kwargs['tol'])) if alg == 'genemania' else '',
-        postfix,
-    )
-    return out_file
+#try:
+from sklearn import metrics
+#except ImportError:
+#    pass
 
 
 def select_goterms(only_functions_file=None, goterms=None):
@@ -202,45 +147,17 @@ def convert_nodes_to_int(G):
 #    return node2int, int2node
 
 
+# TODO it would be faster to just load the matrix in matlab here directly
 def setup_sparse_network(network_file, node2idx_file=None, forced=False):
     """
-    Takes a network file and converts it to a sparse matrix
+    Takes a network file and converts it to a sparse matrix, and loads the sparse matrix within the matlab engine
     """
     sparse_net_file = network_file.replace('.txt', '.npz')
+    mat_net_file = network_file.replace('.txt', '.mat')
     if node2idx_file is None:
         node2idx_file = sparse_net_file + "-node-ids.txt"
-    if forced is False and (os.path.isfile(sparse_net_file) and os.path.isfile(node2idx_file)):
-        print("Reading network from %s" % (sparse_net_file))
-        W = sparse.load_npz(sparse_net_file)
-        print("\t%d nodes and %d edges" % (W.shape[0], len(W.data)/2))
-        print("Reading node names from %s" % (node2idx_file))
-        node2idx = {n: int(n2) for n, n2 in utils.readColumns(node2idx_file, 1, 2)}
-        idx2node = {n2: n for n, n2 in node2idx.items()}
-        prots = [idx2node[n] for n in sorted(idx2node)]
-    elif os.path.isfile(network_file):
+    if os.path.isfile(network_file) and (not os.path.isfile(sparse_net_file) or forced is True):
         print("Reading network from %s" % (network_file))
-#        G = nx.Graph()
-#        with open(network_file, 'r') as f:
-#            for line in f:
-#                if line[0] == "#":
-#                    continue
-#                u,v,w = line.rstrip().split('\t')[:3]
-#                G.add_edge(u,v,weight=float(w))
-#                #edges[(u,v)] = float(w)
-#                #nodes.update(set([u,v]))
-#        print("\t%d nodes and %d edges" % (G.number_of_nodes(), G.number_of_edges()))
-#
-#        print("\trelabeling node IDs with integers")
-#        G, node2idx, idx2node = convert_nodes_to_int(G)
-#        print("\twriting node2idx labels to %s" % (node2idx_file))
-#        nodes_ids = sorted(idx2node)
-#        with open(node2idx_file, 'w') as out:
-#            out.write(''.join(["%s\t%s\n" % (idx2node[n], n) for n in nodes_ids]))
-#
-#        print("\tconverting to a scipy sparse matrix")
-#        W = nx.to_scipy_sparse_matrix(G, nodelist=nodes_ids)
-        # load the first three columns into vectors
-        #u, v, val = np.loadtxt(filename).T[:3]
         u,v,w = [], [], []
         # TODO make sure the network is symmetrical
         with open(network_file, 'r') as f:
@@ -251,13 +168,11 @@ def setup_sparse_network(network_file, node2idx_file=None, forced=False):
                 v.append(line[1])
                 w.append(float(line[2]))
         print("\tconverting uniprot ids to node indexes / ids")
-        # first convert the uniprot ids to node indexes / ids
         prots = sorted(set(list(u)) | set(list(v)))
         node2idx = {prot: i for i, prot in enumerate(prots)}
         i = [node2idx[n] for n in u]
         j = [node2idx[n] for n in v]
         print("\tcreating sparse matrix")
-        #print(i,j,w)
         W = sparse.coo_matrix((w, (i, j)), shape=(len(prots), len(prots))).tocsr()
         # make sure it is symmetric
         if (W.T != W).nnz == 0:
@@ -272,9 +187,24 @@ def setup_sparse_network(network_file, node2idx_file=None, forced=False):
         print("\twriting node2idx labels to %s" % (node2idx_file))
         with open(node2idx_file, 'w') as out:
             out.write(''.join(["%s\t%d\n" % (prot,i) for i, prot in enumerate(prots)]))
-    else:
+    elif not os.path.isfile(network_file):
         print("Network %s not found. Quitting" % (network_file))
         sys.exit(1)
+
+    print("Reading network from %s" % (sparse_net_file))
+    W = sparse.load_npz(sparse_net_file)
+    print("\t%d nodes and %d edges" % (W.shape[0], len(W.data)/2))
+    #if not os.path.isfile(mat_net_file):
+    #    print("writing sparse matrix as mat file %s" % (mat_net_file))
+    #    savemat(mat_net_file, {'W': W})
+    ## now load the mat file within matlab
+    #print("loading network from mat file %s" % (mat_net_file))
+    #eng.eval("load('%s')" % (os.path.abspath(mat_net_file)), nargout=0)
+
+    print("Reading node names from %s" % (node2idx_file))
+    node2idx = {n: int(n2) for n, n2 in utils.readColumns(node2idx_file, 1, 2)}
+    idx2node = {n2: n for n, n2 in node2idx.items()}
+    prots = [idx2node[n] for n in sorted(idx2node)]
 
     return W, prots
 
@@ -333,81 +263,6 @@ def get_goid_pos_neg(ann_matrix, i):
     positives = (goid_ann > 0).nonzero()[1]
     negatives = (goid_ann < 0).nonzero()[1]
     return positives, negatives
-
-
-def setupScores(P, positives, negatives=None, a=1, remove_nonreachable=True, verbose=False):
-    """
-    """
-    #print("Initializing scores and setting up network")
-    pos_vec = np.zeros(P.shape[0])
-    pos_vec[positives] = 1
-    #if negatives is not None:
-    #    pos_vec[negatives] = -1
-
-    # f contains the fixed amount of score coming from positive nodes
-    f = a*csr_matrix.dot(P, pos_vec)
-
-    if remove_nonreachable is True:
-        node2idx, idx2node = {}, {}
-        # remove the negatives first and then remove the non-reachable nodes
-        if negatives is not None:
-            node2idx, idx2node = build_index_map(range(len(f)), negatives)
-            P = delete_nodes(P, negatives)
-            f = np.delete(f, negatives)
-            #fixed_nodes = np.concatenate([positives, negatives])
-            positives = set(node2idx[n] for n in positives)
-        positives = set(list(positives))
-        fixed_nodes = positives 
-
-        start = time.time()
-        # also remove nodes that aren't reachable from a positive 
-        # find the connected_components. If a component doesn't have a positive, then remove the nodes of that component
-        num_ccs, node_comp = csgraph.connected_components(P, directed=False)
-        # build a dictionary of nodes in each component
-        ccs = defaultdict(set)
-        # check to see which components have a positive node in them
-        pos_comp = set()
-        for n in range(len(node_comp)):
-            comp = node_comp[n]
-            ccs[comp].add(n)
-            if comp in pos_comp:
-                continue
-            if n in positives:
-                pos_comp.add(comp)
-
-        non_reachable_ccs = set(ccs.keys()) - pos_comp
-        not_reachable_from_pos = set(n for cc in non_reachable_ccs for n in ccs[cc])
-#        # use matrix multiplication instead
-#        reachable_nodes = get_reachable_nodes(P, positives)
-#        print(len(reachable_nodes), P.shape[0] - len(reachable_nodes))
-        if verbose:
-            print("%d nodes not reachable from a positive. Removing them from the graph" % (len(not_reachable_from_pos)))
-            print("\ttook %0.4f sec" % (time.time() - start))
-        # combine them to be removed
-        fixed_nodes = positives | not_reachable_from_pos
-
-        node2idx2, idx2node2 = build_index_map(range(len(f)), fixed_nodes)
-        if negatives is not None:
-            # change the mapping to be from the deleted nodes to the original node ids
-            node2idx = {n: node2idx2[node2idx[n]] for n in node2idx if node2idx[n] in node2idx2}
-            idx2node = {node2idx[n]: n for n in node2idx}
-        else:
-            node2idx, idx2node = node2idx2, idx2node2 
-    else:
-        fixed_nodes = positives 
-        if negatives is not None:
-            fixed_nodes = np.concatenate([positives, negatives])
-        node2idx, idx2node = build_index_map(range(len(f)), set(list(fixed_nodes)))
-    # removing the fixed nodes is slightly faster than selecting the unknown rows
-    # remove the fixed nodes from the graph
-    fixed_nodes = np.asarray(list(fixed_nodes)) if not isinstance(fixed_nodes, np.ndarray) else fixed_nodes
-    P = delete_nodes(P, fixed_nodes)
-    # and from f
-    f = np.delete(f, fixed_nodes)
-    assert P.shape[0] == P.shape[1], "Matrix is not square"
-    assert P.shape[1] == len(f), "f doesn't match size of P"
-
-    return P, f, node2idx, idx2node
 
 
 def build_index_map(nodes, nodes_to_remove):
@@ -706,6 +561,8 @@ def compute_eval_measures(scores, positives, negatives=None, track_pos_neg=False
         return precision, recall, fpr
 
 
+
+
 def compute_fmax(prec, rec):
     f_measures = []
     for i in range(len(prec)):
@@ -716,7 +573,6 @@ def compute_fmax(prec, rec):
             harmonic_mean = (2*p*r)/(p+r)
         f_measures.append(harmonic_mean)
     return max(f_measures)
-
 
 def compute_avgp(prec, rec):
     # average precision score
@@ -730,11 +586,9 @@ def compute_avgp(prec, rec):
     #avgp = avgp / float(len(alg_prec_rec))
     return avgp
 
-
 def compute_auprc(prec, rec):
     auprc = metrics.auc(rec, prec)
     return auprc
-
 
 def compute_auroc(tpr, fpr):
     auroc = metrics.auc(fpr, tpr)

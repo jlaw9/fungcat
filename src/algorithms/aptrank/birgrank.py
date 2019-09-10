@@ -55,6 +55,8 @@ def birgRank(G, Rtrain, dH, alpha=.5, theta=.5, mu=.5,
     # [G  0]
     # [RT H]
     P = vstack([hstack([mu*G, csc_matrix((m,n))]), hstack([(1-mu)*Rtrain.T, dH])]).tocsc()
+    # try reversing the R connection and see if that makes a difference
+    #P = vstack([hstack([mu*G, (1-mu)*Rtrain]), hstack([csc_matrix((n,m)), dH])]).tocsc()
     # normalize using the same normalization as AptRank
     P = alg_utils.normalizeGraphEdgeWeights(P, axis=0)  # column normalization
     P = alpha*P
@@ -84,6 +86,7 @@ def birgRank(G, Rtrain, dH, alpha=.5, theta=.5, mu=.5,
 #        #print(X)
 #        # pull out just scores for the GO terms
 #        Xh = X[m:,:]
+        # much faster to only compute scores for a subset of nodes
         Xh = lil_matrix((m,n))
         if nodes is None:
             nodes = list(range(B.shape[1]))
@@ -104,9 +107,12 @@ def birgRank(G, Rtrain, dH, alpha=.5, theta=.5, mu=.5,
             #print(m, len(x[m:]))
             #print(Xh.shape)
             Xh[i] = x[m:]
+            if verbose:
+                print("\tbirgRank converged after %d iterations. max_d: %0.2e, eps: %0.2e" % (iters, max_d, eps))
         Xh = Xh.T
 
         total_time = time.process_time() - start_time
+        # this only shows the # of iterations for the last prot
         print("\tbirgRank converged after %d iterations (%0.2f sec)" % (iters, total_time))
     else:
         A = eye(m+n) - P
@@ -117,7 +123,7 @@ def birgRank(G, Rtrain, dH, alpha=.5, theta=.5, mu=.5,
         # split it up into two equations to solve
         # (I-alpha*G)Xg = (1-alpha)I
         Xg = spsolve(A[:m,:][:,:m], B[:m,:])
-        # gives a memory error
+        # cg doesn't run with a sparse B, and the following gives a memory error
         #Xg = cg(A[:m,:][:,:m], B[:m,:].todense())
         print("\tsolving for Xh")
         # alpha*RT*Xg = (I - alpha*H)Xh

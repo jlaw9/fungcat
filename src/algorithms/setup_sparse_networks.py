@@ -3,7 +3,7 @@
 # also used for weighting the networks with the
 # Simultaneous Weight with Specific Negatives (SWSN) method
 
-import os, sys
+import os, sys, time
 from optparse import OptionParser, OptionGroup
 from collections import defaultdict
 #import matlab.engine
@@ -16,7 +16,7 @@ from string_split_to_species import full_column_names, \
     STRING_NETWORKS, NON_TRANSFERRED_STRING_NETWORKS, \
     CORE_STRING_NETWORKS
 import algorithms.gain_scipy.alg_utils as alg_utils
-#from findKernelWeights import findKernelWeights
+from algorithms.weight_networks.findKernelWeights import findKernelWeights
 from algorithms.weight_networks.combineNetworksSWSN import combineNetworksSWSN
 import networkx as nx
 #import pandas as pd
@@ -111,7 +111,7 @@ def parse_args(args):
 def main(versions, pos_neg_files, goterms=None, taxons=None,
          out_pref_net=None, out_pref_ann=None,
          string_networks=["combined_score"],
-         string_cutoff=f_settings.STRING_CUTOFF,
+         string_cutoff=400,
          weight_swsn=None, forcenet=False,
 ):
 
@@ -165,12 +165,17 @@ def main(versions, pos_neg_files, goterms=None, taxons=None,
 
 def create_sparse_net_file(
         version, out_pref, selected_strains=None, taxon=None, string_nets=[],
-        string_cutoff=f_settings.STRING_CUTOFF, forcenet=False):
+        string_file_cutoff=400, string_cutoff=None, forcenet=False):
+    """
+    *string_file_cutoff*: cutoff for the combined score in the name of the string file
+    *string_cutoff*: This option allows you to use a higher cutoff than what the file has.
+        If None, then all edges in the string file will be used.  
+    """
 
     net_files = []
     string_net_files = []
     if taxon is not None:
-        network_file = f_settings.STRING_TAXON_UNIPROT_FULL % (taxon, taxon, string_cutoff)
+        network_file = f_settings.STRING_TAXON_UNIPROT_FULL % (taxon, taxon, string_file_cutoff)
         #ann_file = f_settings.FUN_FILE % (self.taxon, self.taxon)
         string_net_files.append(network_file)
 
@@ -182,7 +187,7 @@ def create_sparse_net_file(
         if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[version]:
             # and all of the string networks available
             for taxon in selected_strains:
-                net_file = f_settings.STRING_TAXON_UNIPROT_FULL % (taxon, taxon, string_cutoff)
+                net_file = f_settings.STRING_TAXON_UNIPROT_FULL % (taxon, taxon, string_file_cutoff)
                 string_net_files.append(net_file)
 
     # the node IDs should be the same for each of the networks,
@@ -205,7 +210,7 @@ def create_sparse_net_file(
     else:
         print("\tcreating sparse nets and writing to %s" % (sparse_nets_file))
         sparse_networks, network_names, nodes = setup_sparse_networks(
-            net_files=net_files, string_net_files=string_net_files, string_nets=string_nets)
+            net_files=net_files, string_net_files=string_net_files, string_nets=string_nets, string_cutoff=string_cutoff)
 
         # now write them to a file
         write_sparse_net_file(
@@ -251,13 +256,23 @@ def write_sparse_net_file(
     #    network_file = "inputs/%s/%s-net.txt" % (version, version)
 
 
-def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
+#def setup_sparse_networks_numpy(net_files=[], string_net_files=[], string_nets=[]):
+# only works for a single network for now
+#def setup_sparse_network_numpy(net_files=[], string_net_files=[], string_nets=[]):
+#    u, v, val = np.loadtxt(filename).T
+#    # first convert the uniprot ids to node indexes / ids
+#    prots = sorted(set(list(u)) | set(list(v)))
+#    node2idx = {prot: i for i, prot in enumerate(prots)}
+
+
+def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[], string_cutoff=None):
     """
     Function to setup networks as sparse matrices 
     *net_files*: list of networks for which to make into a sparse
         matrix. The name of the file will be the name of the sparse matrix
     *string_net_files*: List of string files containing all 14 STRING network columns
     *string_nets*: List of STRING network column names for which to make a sparse matrix. 
+    *string_cutoff*: Cutoff to use for the STRING combined network column (last)
 
     *returns*: List of sparse networks, list of network names, 
         list of proteins in the order they're in in the sparse networks
@@ -271,7 +286,7 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
     for net_file in tqdm(net_files):
         name = os.path.basename(net_file)
         network_names.append(name)
-        tqdm.write("Reading network from %s. Giving the name %s" % (net_file, name))
+        tqdm.write("Reading network from %s. Giving the name '%s'" % (net_file, name))
         with open(net_file, 'r') as f:
             for line in f:
                 if line[0] == "#":
@@ -295,12 +310,16 @@ def setup_sparse_networks(net_files=[], string_net_files=[], string_nets=[]):
                 line = line.rstrip().split('\t')
                 u,v = line[:2]
                 attr_dict = {}
+                combined_score = float(line[-1])
+                # first check if the combined score is above the cutoff
+                if string_cutoff is not None and combined_score < string_cutoff:
+                    continue
                 for net in string_nets:
                     w = float(line[full_column_names[net]-1])
                     if w > 0:
                         attr_dict[net] = w
-                # if the edge already exists, it will be added with
-                # the new attributes
+                # if the edge already exists, 
+                # the old attributes will still be retained
                 G.add_edge(u,v,**attr_dict)
     print("\t%d nodes and %d edges" % (G.number_of_nodes(), G.number_of_edges()))
 
@@ -365,9 +384,11 @@ def create_sparse_ann_file(out_pref, pos_neg_files, goids, prots,
     return ann_matrix, goids
 
 
-def setup_sparse_annotations(pos_neg_files, goterms, prots,
-                             selected_species=None, taxon=None):
+def setup_sparse_annotations(pos_neg_file, goterms, prots,
+                             selected_species=None, taxon_prots=None):
     """
+    *prots*: list of proteins used to set the index. 
+        If proteins in the pos_neg_file are not in the list of specified prots, they will be ignored.
     
     *returns*: 1) A matrix with goterm rows, protein/node columns, and
         1,0,-1 for pos,unk,neg values
@@ -398,43 +419,13 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
     #pos_neg_files = [
     #        "inputs/pos-neg/%s/pos-neg-%s-50-list.tsv" % (ev_codes, h),] 
     ##        "inputs/pos-neg/%s/pos-neg-mf-50-list.tsv" % (ev_codes),]
-    ## TODO build the matrix while parsing the file
-    goid_pos, goid_neg = alg_utils.parse_pos_neg_files(pos_neg_files, goterms=goterms) 
+    # UPDATE 2018-10-22: build the matrix while parsing the file
+    #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(pos_neg_files, goterms=goterms) 
     node2idx = {prot: i for i, prot in enumerate(prots)}
 
-    # limit it to the current taxon
-    if taxon is not None:
-        print("Getting species of each prot from %s" % (f_settings.UNIPROT_TO_SPECIES))
-        #print("Limiting the prots to those for taxon %s (%s)" % (taxon, selected_species[taxon]))
-        print("Limiting the prots to those for taxon %s" % (taxon))
-        # for each of the 19 species, leave out their annotations 
-        # and see how well we can retrieve them 
-        uniprot_to_species = utils.readDict(f_settings.UNIPROT_TO_SPECIES, 1,2)
-        # also build the reverse
-        species_to_uniprot = defaultdict(set)
-        for p in uniprot_to_species:
-            species_to_uniprot[uniprot_to_species[p]].add(p)
-        if taxon not in species_to_uniprot:
-            print("Error: taxon ID '%d' not found" % (taxon))
-            sys.exit()
-        taxon_prots = species_to_uniprot[taxon]
-        # also limit the proteins to those in the network
-        print("\t%d prots for taxon %s. Limiting to the %d in the network" % (len(taxon_prots), taxon, len(node2idx)))
-        taxon_prots = taxon_prots & set(node2idx.keys())
-        goid_pos = {goid: prots & taxon_prots for goid, prots in goid_pos.items()}
-        goid_neg = {goid: prots & taxon_prots for goid, prots in goid_neg.items()}
-        goids_to_remove = set()
-        for goid in goid_pos:
-            if len(goid_pos[goid]) == 0:
-                goids_to_remove.add(goid)
-        if len(goids_to_remove) > 0:
-            print("Warning: %d goterms have 0 annotations. Removing them." % (len(goids_to_remove)))
-            for goid in goids_to_remove:
-                goid_pos.pop(goid)
-                goid_neg.pop(goid)
-
-    goids = sorted(goid_pos.keys())
-
+    # TODO store the annotations in sparse matrix form, then load the sparse matrix directly
+    # In the case of specific goterms passed in, load the matrix, then keep only the specified goterms 
+    print("Reading positive and negative annotations for each protein from %s" % (pos_neg_file))
 #def build_sparse_matrix(data, rows, cols):
     # rather than explicity building the matrix, use the indices to build a coordinate matrix
     # rows are prots, cols are goids
@@ -445,17 +436,54 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
     num_neg = 0
     # limit the annotations to the proteins which are in the networks
     prots_set = set(prots)
-    for j, goid in enumerate(goids):
-        for prot in goid_pos[goid] & prots_set:
-            i_list.append(node2idx[prot])
-            j_list.append(j)
-            data.append(1)
-            num_pos += 1
-        for prot in goid_neg[goid] & prots_set:
-            i_list.append(node2idx[prot])
-            j_list.append(j)
-            data.append(-1)
-            num_neg += 1
+    if taxon_prots is not None:
+        # limit the annotations to the taxon of interest
+        prots_set = prots_set & taxon_prots
+#    for j, goid in enumerate(goids):
+#        for prot in goid_pos[goid] & prots_set:
+#            i_list.append(node2idx[prot])
+#            j_list.append(j)
+#            data.append(1)
+#            num_pos += 1
+#        for prot in goid_neg[goid] & prots_set:
+#            i_list.append(node2idx[prot])
+#            j_list.append(j)
+#            data.append(-1)
+#            num_neg += 1
+    goids = []
+    j = 0
+    # TODO get the GO terms from the summary matrix if they're not available here.
+    # first estimate the number of lines
+    total = 0
+    with open(pos_neg_file, 'r') as f:
+        for line in f:
+            total += 1
+    # read the file to build the matrix
+    with open(pos_neg_file, 'r') as f:
+        #for line in f:
+        for line in tqdm(f, total=total, disable=True if total < 250 else False):
+            if line[0] == '#':
+                continue
+            goid, pos_neg_assignment, curr_prots = line.rstrip().split('\t')[:3]
+            if goterms and goid not in goterms:
+                continue
+            # the file has two lines per goterm. A positives line, and a negatives line
+            curr_prots = set(curr_prots.split(','))
+            if int(pos_neg_assignment) == 1:
+                for prot in curr_prots & prots_set:
+                    i_list.append(node2idx[prot])
+                    j_list.append(j)
+                    data.append(1)
+                    num_pos += 1
+            elif int(pos_neg_assignment) == -1:
+                for prot in curr_prots & prots_set:
+                    i_list.append(node2idx[prot])
+                    j_list.append(j)
+                    data.append(-1)
+                    num_neg += 1
+                goids.append(goid)
+                j += 1
+
     print("\t%d annotations. %d positive, %d negatives" % (len(data), num_pos, num_neg))
 
     # convert it to a sparse matrix 
@@ -481,25 +509,60 @@ def setup_sparse_annotations(pos_neg_files, goterms, prots,
 #
 
 
+def weight_GM2008(y, normalized_nets, net_names=None, goid=None):
+    """ TODO DOC
+    """
+    if goid is not None:
+        print("\tgoid %s: %d positives, %d negatives" % (goid, len(np.where(y > 0)[0]), len(np.where(y < 0)[0])))
+    alphas, indices = findKernelWeights(y, normalized_nets)
+    if net_names is not None:
+        print("\tnetwork weights: %s\n" % (', '.join(
+            "%s: %s" % (net_names[x], alphas[i]) for
+             i, x in enumerate(indices))))
+
+    # now add the networks together with the alpha weight applied
+    combined_network = alphas[0]*normalized_nets[indices[0]]
+    for i in range(1,len(alphas)):
+        combined_network += alphas[i]*normalized_nets[indices[i]] 
+
+    # don't write each goterm's combined network to a file
+    return combined_network
+
+
 def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None, nodes=None):
+    """ TODO DOC
     """
-    """
+    if len(sparse_nets) == 1:
+        print("Only one network given to weight_SWSN. Nothing to do.")
+        total_time = 0
+        return sparse_nets[0], total_time
+    # remove rows with 0 annotations/positives
+    empty_rows = []
+    for i in range(ann_matrix.shape[0]):
+        pos, neg = alg_utils.get_goid_pos_neg(ann_matrix, i)
+        # the combineWeightsSWSN method doesn't seem to
+        # work if there's only 1 positive
+        if len(pos) <= 1 or len(neg) <= 1:
+            empty_rows.append(i)
+    # don't modify the original annotation matrix to keep the rows matching the GO ids
+    curr_ann_mat = alg_utils.delete_rows_csr(ann_matrix.tocsr(), empty_rows)
 
     # normalize the networks
     print("Normalizing the networks")
     normalized_nets = []
     for net in sparse_nets:
         normalized_nets.append(_net_normalize(net))
-    print("Weighting networks for %d different GO terms" % (ann_matrix.shape[0]))
+    print("Weighting networks for %d different GO terms" % (curr_ann_mat.shape[0]))
     print("Running simultaneous weights with specific negatives")
     # try running it now
-    #for i in range(ann_matrix.shape[0]):
-    #    y = ann_matrix[i].toarray()[0]
+    #for i in range(curr_ann_matrix.shape[0]):
+    #    y = curr_ann_matrix[i].toarray()[0]
     #    print("\tgoid %s: %d positives, %d negatives" % (goids[i], len(np.where(y > 0)[0]), len(np.where(y < 0)[0])))
     #    #alpha, indices = findKernelWeights(y, normalized_nets)
     #    #print("\tString networks: %s\n" % (', '.join(STRING_NETWORKS[x] for
     #    #                                           x in indices)))
-    alpha, indices = combineNetworksSWSN(ann_matrix, normalized_nets) 
+    start_time = time.process_time()
+    alpha, indices = combineNetworksSWSN(curr_ann_mat, normalized_nets) 
     if net_names is not None:
         print("\tnetworks chosen: %s" % (', '.join([net_names[i] for i in indices])))
 
@@ -507,8 +570,11 @@ def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None, nodes=No
     combined_network = alpha[0]*sparse_nets[indices[0]]
     for i in range(1,len(alpha)):
         combined_network += alpha[i]*sparse_nets[indices[i]] 
+    total_time = time.process_time() - start_time
 
     if out_file is not None:
+        # replace the .txt if present 
+        out_file = out_file.replace('.txt', '.npz')
         utils.checkDir(os.path.dirname(out_file))
         print("\twriting combined network to %s" % (out_file))
         sparse.save_npz(out_file, combined_network)
@@ -525,7 +591,7 @@ def weight_SWSN(ann_matrix, sparse_nets, net_names=None, out_file=None, nodes=No
         with open(net_weight_file, 'w') as out:
             out.write(''.join("%s\t%s\n" % (net_names[idx], str(alpha[i])) for i, idx in enumerate(indices)))
 
-    return combined_network
+    return combined_network, total_time
 
 
 # this was mostly copied from the deepNF preprocessing script
@@ -586,7 +652,7 @@ def run():
 
     main(opts.version, opts.pos_neg_file, goterms=goterms, taxons=opts.taxon,
          out_pref_net=opts.out_pref_net, out_pref_ann=opts.out_pref_ann,
-         string_networks=string_networks, string_cutoff=f_settings.STRING_CUTOFF,
+         string_networks=string_networks, string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
          weight_swsn=opts.weight_SWSN, forcenet=opts.forcenet
     )
 

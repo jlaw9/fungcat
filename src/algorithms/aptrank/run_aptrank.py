@@ -153,10 +153,6 @@ for h in ["P"]:
     # convert it to a sparse matrix and transpose it so it matches the GO DAG and G network (above)
     print("Converting the annotation table to a sparse matrix")
     annotation_matrix = sparse.csr_matrix(table).transpose()
-    #annotation_matrix.to_csv(out_file)
-    #with open(out_file, 'w') as out:
-    #    for row in table:
-    #        out.write(','.join(row) + '\n')
 
     # UPDATE: limit to only the GO terms in R
     print("Limiting DAG to only the %d %s GO terms that have at least 1 annotation (assuming annotations already propagated up the DAG)" % (len(goids), h))

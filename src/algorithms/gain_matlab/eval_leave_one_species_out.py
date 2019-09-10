@@ -12,8 +12,8 @@ sys.path.append("src")
 import utils.file_utils as utils
 import fungcat_settings as f_settings
 #import run_algs
-import algorithms.gain_scipy.run_algs as run_algs
-import algorithms.gain_scipy.alg_utils as alg_utils
+import algorithms.gain_matlab.run_algs as run_algs
+import algorithms.gain_matlab.alg_utils as alg_utils
 import algorithms.setup_sparse_networks as setup
 import algorithms.aptrank.run_birgrank as run_birgrank
 from scipy import sparse
@@ -30,10 +30,10 @@ def parse_args(args):
     group = OptionGroup(parser, 'Main Options')
     group.add_option('','--version',type='string',
                      help="Version of the PPI to run. Can specify multiple versions and they will run one after the other. Options are: %s." % (', '.join(f_settings.ALLOWEDVERSIONS)))
-    group.add_option('-N','--net-file',type='string',
-                     help="Network file to use. Default is the version's default network. If it doesn't exist and a STRING version with SWSN is selected, it will be written.")
+    #group.add_option('-N','--net-file',type='string',
+    #                 help="Network file to use. Can specify one per version. Default is the version's default network")
     group.add_option('-A', '--algorithm', action="append",
-                     help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(alg_utils.ALGORITHMS)))
+                     help="Algorithm for which to get predictions. Default is all of them. Options: '%s'" % ("', '".join(run_algs.ALGORITHMS)))
     group.add_option('', '--exp-name', type='string',
                      help="Experiment name to use when running GAIN.")
     group.add_option('', '--pos-neg-file', type='string',
@@ -69,8 +69,6 @@ def parse_args(args):
     group = OptionGroup(parser, 'Additional options')
     group.add_option('-T', '--taxon', type='string', action='append',
                       help="Specify the species taxonomy ID to use to be left out. Multiple may be specified. Otherwise, all species will be used")
-    group.add_option('', '--write-prec-rec', action='store_true', default=False,
-                     help="Write the prec/rec values for each left-out positive. Usually only used for a single goterm and a single taxon.")
     group.add_option('', '--postfix', type='string', default="",
                      help="Postfix to append to output file. Useful if running multiple in parallel. TODO figure out how to automatically combine the multiple output files")  # for file to write. Otherwise the standard outputs/<version>/all/<algorithm>/<exp_name>/ will be used. 
     group.add_option('-W', '--num-pred-to-write', type='int', default=100,
@@ -105,8 +103,8 @@ def parse_args(args):
 
     # TODO
     for alg in opts.algorithm:
-        if alg not in alg_utils.ALGORITHMS:
-            print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(alg_utils.ALGORITHMS)))
+        if alg not in run_algs.ALGORITHMS:
+            print("ERROR: '%s' not a valid algorithm name. Algorithms are: '%s'." % (alg, ', '.join(run_algs.ALGORITHMS)))
             sys.exit(1)
     if 'aptrank' in opts.algorithm:
         from aptrank.aptrank import AptRank
@@ -136,6 +134,18 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
     *eval_ann_matrix*: matrix with the same data as *ann_matrix*, except 
         it will only be used for evaluation
     """
+    # option to use negative examples when evaluating predictions
+    #use_negatives_for_eval = True 
+    # start with less GO terms
+    #exp_name = "eval-species-%s-%d-%d-25iters" % (evidence_codes, cut1, cut2)
+    if opts.non_pos_as_neg_eval is False:
+        exp_name += "-use-neg" 
+    else:
+        exp_name += "-non-pos-neg" 
+    if opts.oracle:
+        exp_name += "-oracle" 
+    if opts.keep_ann:
+        exp_name += "-keep-ann" 
 
     # TODO make this more streamlined
     aptrank_data = None 
@@ -171,24 +181,32 @@ def main(version, exp_name, W, prots, ann_matrix, goids,
 
     for alg in algorithms:
         #out_file = "%s/all/%s/%s/loso-%s%s%sl%d-a%s-eps%s-maxi%d%s%s%s%s.txt" % (  # for now, look at the main file to see which are missing
-        #out_file = alg_utils.get_filepath_helper(
-        #        alg=alg, exp_type='loso', **vars(opts))
-        kwargs = vars(opts)
-        # remove the postfix temporarily from the file path to get the main file. 
-        postfix = kwargs['postfix']
-        kwargs['postfix'] = '' if version == "2018_09-s200-seq-sim-e0_1" else postfix
-        out_file = alg_utils.get_filepath_helper(
-            alg=alg, exp_type="%sloso" % ("goids/" if opts.write_prec_rec else ""), **kwargs)
-        kwargs['postfix'] = postfix
+        out_file = "%s/all/%s/%s/loso-%s%s%sl%d-a%s-eps%s-maxi%d%s%s%s.txt" % (
+            RESULTSPREFIX, alg, exp_name,
+            'unw-' if opts.unweighted else '', 
+            'goterm-weight-' if opts.weight_per_goterm else '',
+            'swsn-' if opts.weight_swsn else '',
+            0 if opts.sinksourceplus_lambda is None else opts.sinksourceplus_lambda,
+            str(opts.alpha).replace('.', '_'),
+            str(opts.eps).replace('.', '_'),
+            opts.max_iters,
+            '-t%s-m%s-l%s' % (
+                str(opts.theta).replace('.','_'), str(opts.mu).replace('.','_'),
+                str(opts.br_lambda).replace('.','_')) if alg == 'birgrank' else '',
+            '-l%s-k%s-s%s-t%s-%s' % (
+                str(opts.br_lambda).replace('.','_'), str(opts.apt_k).replace('.', '_'),
+                str(opts.apt_s).replace('.', '_'), str(opts.apt_t).replace('.', '_'),
+                opts.diff_type) if alg == 'aptrank' else '',
+            '-tol%s' % (str(opts.tol).replace('.', '_')) if alg == 'genemania' else '',
+            #opts.postfix,
+        )
 
         if os.path.isfile(out_file) and opts.forcealg:
-            #if len(taxons) > 1: 
-            if not opts.write_prec_rec:
+            if len(taxons) > 1: 
                 print("Removing %s as results will be appended to it for each taxon" % (out_file))
                 os.remove(out_file)
         elif os.path.isfile(out_file) and opts.only_pred is False:
-            #if len(taxons) > 1: 
-            if not opts.write_prec_rec:
+            if len(taxons) > 1: 
                 print("WARNING: %s results file already exists. Appending to it" % (out_file))
                 #print("%s results file already exists. Use --forcealg to overwrite it.\nQuitting" % (out_file))
                 #sys.exit()
@@ -297,9 +315,10 @@ def run_and_eval_algs(
         #    W = sparse.load_npz(out_file)
         #else:
         W, swsn_time = setup.weight_SWSN(train_ann_mat, sparse_networks,
-                net_names=net_names, nodes=prots, out_file=opts.net_file)
+                net_names=net_names, nodes=prots)
         print("\ttotal time to weight networks swsn: %0.4f sec" % (swsn_time))
         params_results['swsn_time'] += swsn_time
+                #net_names=net_names, out_file=out_file, nodes=prots)
 
     if opts.keep_ann:
         print("Keeping all annotations when making predictions")
@@ -317,8 +336,8 @@ def run_and_eval_algs(
         # change to running sinksource with 25 iterations
         # leave alpha at default 0.8
         alg_runner = run_algs.Alg_Runner(
-            version, exp_name, W, prots, train_ann_mat, goids,
-            algorithms=[alg], weight_swsn=False, weight_gm2008=opts.weight_gm2008, unweighted=opts.unweighted,
+            opts.eng, version, exp_name, W, prots, train_ann_mat, goids,
+            algorithms=[alg], weight_swsn=False, weight_per_goterm=opts.weight_per_goterm, unweighted=opts.unweighted,
             ss_lambda=opts.sinksourceplus_lambda, taxon=taxon,
             eps=opts.eps, epsUB_list=opts.epsUB, max_iters=opts.max_iters,
             rank_topk=opts.rank_topk, rank_all=opts.rank_all, rank_pos_neg=rank_pos_neg, compare_ranks=opts.compare_ranks,  # sinksource-squeeze parameters
@@ -343,53 +362,67 @@ def run_and_eval_algs(
         # skip evaluation if --only-pred is specified
         if opts.only_pred:
             continue
-
         # now evaluate 
+        out_dir = "outputs/%s/all/%s/%s/" % (version, alg, exp_name)
+
         # this will write an file containing the fmax for each goterm 
         # with the taxon name in the name of the file
-        if opts.write_prec_rec:
+        write_prec_rec = False 
+        if len(taxons) == 1:
             print("Also writing prec/rec stats")
-        #if len(taxons) == 1:
-        #    print("Also writing prec/rec stats")
-        #    write_prec_rec = True 
+            write_prec_rec = True 
+            out_dir += "goids/"
 
-        out_file = alg_utils.get_filepath_helper(alg=alg, 
-            exp_type="%s%sloso" % ("goids/" if opts.write_prec_rec else "",
-                                   "all-sp-" if taxon=='all' else ''), 
-            **vars(opts))
-        utils.checkDir(os.path.dirname(out_file))
+        utils.checkDir(out_dir)
+        out_pref = "%s/%sloso-%s%s%sl%d-a%s-eps%s-maxi%d" % (
+            out_dir, "all-sp-" if taxon=='all' else '',
+            'unw-' if opts.unweighted else '',
+            'goterm-weight-' if opts.weight_per_goterm else '',
+            'swsn-' if opts.weight_swsn else '',
+            0 if alg_runner.ss_lambda is None else int(alg_runner.ss_lambda),
+            str(opts.alpha).replace('.','_'), str(opts.eps).replace('.','_'),
+            opts.max_iters)
+        if alg == 'birgrank':
+            out_pref += '-t%s-m%s-l%s' % (
+                str(opts.theta).replace('.','_'), str(opts.mu).replace('.','_'), str(opts.br_lambda).replace('.','_'))
+        elif alg == 'aptrank':
+            k, s, t, diff_type = opts.apt_k, opts.apt_s, opts.apt_t, opts.diff_type
+            out_pref += 'l%s-k%s-s%s-t%s-%s' % (
+                str(opts.br_lambda).replace('.', '_'), str(k).replace('.', '_'), str(s).replace('.', '_'),
+                str(t).replace('.', '_'), diff_type)
+        elif alg == 'genemania':
+            out_pref += '-tol%s' % (str(opts.tol).replace('.', '_') if alg == 'genemania' else '')
 
+        out_file = "%s%s.txt" % (out_pref, opts.postfix)
         alg_runner.evaluate_ground_truth(
             goid_scores, curr_goids, test_ann_mat, out_file,
             #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
-            taxon=taxon, write_prec_rec=opts.write_prec_rec, 
+            taxon=taxon, write_prec_rec=write_prec_rec, 
             #append=True if taxon != 'all' else False)  # update: to parallelize keep_ann, always append
             append=True)
 
         #if opts.keep_ann and per_taxon is True:
         if opts.keep_ann:
-            # add -per-taxon to the end of the file path
-            file_type = out_file[out_file.rfind('.'):]
-            file_end = "%s%s" % (opts.postfix, file_type)
-            out_file_per_taxon = out_file.replace(file_end, "-per-taxon%s"%file_end)
+            out_pref += "-per-taxon"
+            out_file = "%s%s.txt" % (out_pref, opts.postfix)
             # now get the fmax per taxon
             print("Getting the per-taxon fmax results")
             all_train_ann_mat, all_test_ann_mat = train_ann_mat, test_ann_mat
             for s in taxons:
-                _, curr_test_ann_mat, curr_sp_goterms = leave_out_taxon(
+                train_ann_mat, test_ann_mat, sp_goterms = leave_out_taxon(
                     s, all_train_ann_mat, goids, prots, species_to_uniprot_idx,
                     eval_ann_matrix=all_test_ann_mat, keep_ann=opts.keep_ann,
                     non_pos_as_neg_eval=opts.non_pos_as_neg_eval, 
                     oracle=opts.oracle, cutoff=opts.num_test_cutoff)
 
-                tqdm.write("\t%d/%d goterms with >= %d annotations" % (len(curr_sp_goterms), len(goids), opts.num_test_cutoff))
-                if len(curr_sp_goterms) == 0:
+                tqdm.write("\t%d/%d goterms with >= %d annotations" % (len(sp_goterms), len(goids), opts.num_test_cutoff))
+                if len(sp_goterms) == 0:
                     print("\tskipping")
                     continue
                 alg_runner.evaluate_ground_truth(
-                    goid_scores, curr_goids, curr_test_ann_mat, out_file_per_taxon,
+                    goid_scores, curr_goids, test_ann_mat, out_file,
                     #non_pos_as_neg_eval=opts.non_pos_as_neg_eval,
-                    taxon=s, write_prec_rec=opts.write_prec_rec, 
+                    taxon=s, write_prec_rec=write_prec_rec, 
                     append=True)
 
     return goid_scores, params_results
@@ -418,6 +451,7 @@ def leave_out_taxon(s, ann_matrix, goids, prots, species_to_uniprot_idx,
     test_ann_mat = sparse.lil_matrix(ann_matrix.shape, dtype=np.float)
     sp_goterms = []
     skipped_eval_no_left_out_ann = 0
+    #pdb.set_trace()
     for i in range(len(goids)):
         if terms_to_skip is not None and goids[i] in terms_to_skip:
             continue
@@ -492,7 +526,10 @@ def leave_out_taxon(s, ann_matrix, goids, prots, species_to_uniprot_idx,
     return train_ann_mat.tocsr(), test_ann_mat.tocsr(), sp_goterms
 
 
-def setup_inputs(opts):
+def run(args):
+    opts = parse_args(args)
+
+    opts.eng = run_algs.get_matlab_engine()
     goterms = alg_utils.select_goterms(
             only_functions_file=opts.only_functions, goterms=opts.goterm) 
 
@@ -502,129 +539,65 @@ def setup_inputs(opts):
 
     #goid_pos, goid_neg = alg_utils.parse_pos_neg_files(opts.pos_neg_file, goterms=goterms) 
     # load the network matrix and protein IDs
-    net_file = opts.net_file
-    if net_file is None:
-        INPUTSPREFIX, _, net_file, selected_strains = f_settings.set_version(opts.version) 
-    else:
-        INPUTSPREFIX, _, _, selected_strains = f_settings.set_version(opts.version) 
+    #net_file = opts.net_file
+    #if net_file is None:
+    INPUTSPREFIX, _, net_file, selected_strains = f_settings.set_version(opts.version) 
     # TODO this should be better organized so that any STRING networks
     # can be used
     #if 'STRING' in f_settings.NETWORK_VERSION_INPUTS[opts.version] and not opts.unweighted:
-    if opts.weight_swsn or opts.weight_gm2008:
-        # if net_file is specified, but it doesn't exist, then write it
-        #if net_file is not None and not os.path.isfile(net_file):
-        #    print("Option to write net file not yet implemented. Quitting")
-        #    sys.exit(1)
+    if opts.weight_swsn or opts.weight_per_goterm:
         out_pref_net = "%s/sparse-nets/" % (INPUTSPREFIX)
         utils.checkDir(out_pref_net)
         # build the file containing the sparse networks
         sparse_networks, network_names, prots = setup.create_sparse_net_file(
             opts.version, out_pref_net, selected_strains=selected_strains,
-            string_nets=opts.string_networks, string_file_cutoff=f_settings.VERSION_STRING_FILE_CUTOFF[opts.version],
-            string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
+            string_nets=opts.string_networks, string_cutoff=f_settings.VERSION_STRING_CUTOFF[opts.version],
             forcenet=False)
         # TODO organize this better
         W = (sparse_networks, network_names)
     else:
         W, prots = alg_utils.setup_sparse_network(net_file)
 
-    # 2018-02-18 UPDATE: Include all uniprot prots for evaluation. 
-    # TODO make an option for this?
-    if opts.version == "2018_06-seq-sim-e0_1":
-        f_settings.VERSION_UNIPROT_TO_SPECIES
-        print("Getting all prots from %s" % (f_settings.VERSION_UNIPROT_TO_SPECIES[opts.version]))
-        all_prots = set(utils.readItemList(f_settings.VERSION_UNIPROT_TO_SPECIES[opts.version], 1))
-        print("\tadding %d prots to the original %d (total: %d)" % (len(all_prots)-len(prots), len(prots), len(all_prots)))
-        # just append them to the end of the list
-        prots += list(all_prots - set(prots))
-        opts.postfix += "-all-prots"
-
     # now build the annotation matrix
     ann_matrix, goids = setup.setup_sparse_annotations(opts.pos_neg_file, goterms, prots)
-    return W, prots, ann_matrix, goids
-
-
-def setup_eval_ann(pos_neg_file_eval, version, prots, ann_matrix, goids, taxon=None):
-    eval_ann_matrix = None 
-    taxon_prots = None
-    # limit it to the current taxon
-    if taxon is not None:
-        print("Getting species of each prot from %s" % (f_settings.VERSION_UNIPROT_TO_SPECIES[version]))
-        #print("Limiting the prots to those for taxon %s (%s)" % (taxon, selected_species[taxon]))
-        print("Limiting the prots to those for taxon %s" % (taxon))
-        # for each of the 19 species, leave out their annotations 
-        # and see how well we can retrieve them 
-        uniprot_to_species = utils.readDict(f_settings.VERSION_UNIPROT_TO_SPECIES[version], 1,2)
-        # also build the reverse
-        species_to_uniprot = defaultdict(set)
-        for p in uniprot_to_species:
-            species_to_uniprot[uniprot_to_species[p]].add(p)
-        if taxon not in species_to_uniprot:
-            print("Error: taxon ID '%d' not found. Quitting" % (taxon))
-            sys.exit()
-        taxon_prots = species_to_uniprot[taxon]
-        # also limit the proteins to those in the network
-        print("\t%d prots for taxon %s." % (len(taxon_prots), taxon))
-
-    eval_ann_matrix, test_goids = setup.setup_sparse_annotations(
-        pos_neg_file_eval, set(goids), prots, taxon_prots=taxon_prots)
-
-    # Make sure the goids are the same before using it
-    num_ann_with_test = len(set(goids) & set(test_goids))
-    if num_ann_with_test != 0:
-        #print(test_goids)
-        print("WARNING: only %d / %d goids in the annotation matrix are in the evaluation matrix" % (num_ann_with_test, len(goids)))
-        ann_goids_without_eval = set(goids) - set(test_goids)
-
-        print("\tremoving %d GO terms from the annotation matrix" % (len(ann_goids_without_eval)))
-        goids_to_remove = []
-        new_goids = []
-        for i, g in enumerate(goids):
-            if g in ann_goids_without_eval:
-                goids_to_remove.append(i)
-                continue
-            new_goids.append(g)
-        ann_matrix = alg_utils.delete_rows_csr(ann_matrix.tocsr(), goids_to_remove)
-        goids = new_goids
-
-    print("\tmatching the evaluation matrix to the annotation matrix")
-    test_goids2idx = {g: i for i, g in enumerate(test_goids)}
-    # slim down the evaluation matrix to have the same GO terms as the ann matrix
-    #matching_test_matrix = sparse.csr_matrix(ann_matrix.shape)
-    matching_test_matrix = sparse.lil_matrix(ann_matrix.shape)
-    for i, g in enumerate(tqdm(goids)):
-        matching_test_matrix[i] = eval_ann_matrix[test_goids2idx[g]]
-    eval_ann_matrix = matching_test_matrix.tocsr()
-    del matching_test_matrix
-    return ann_matrix, goids, eval_ann_matrix
-
-
-def run(args):
-    opts = parse_args(args)
-
-    if opts.non_pos_as_neg_eval is False:
-        # use negative examples when evaluating predictions
-        opts.exp_name += "-use-neg" 
-    else:
-        opts.exp_name += "-non-pos-neg" 
-    if opts.oracle:
-        opts.exp_name += "-oracle" 
-    if opts.keep_ann:
-        opts.exp_name += "-keep-ann" 
-
-    W, prots, ann_matrix, goids = setup_inputs(opts)
+    #print(goids)
+    test_ann_matrix = None 
     if opts.pos_neg_file_eval is not None:
-        if opts.taxon is None:
-            opts.taxon = [None]
-        for taxon in opts.taxon:
-            ann_matrix, goids, eval_ann_matrix = setup_eval_ann(opts.pos_neg_file_eval, opts.version, prots, ann_matrix, goids, taxon=taxon)
-            main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,
-                 opts.algorithm, opts, taxons=[taxon] if taxon is not None else None,
-                 eval_ann_matrix=eval_ann_matrix)
-    else:
-        main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,
-            opts.algorithm, opts, taxons=opts.taxon)
+        test_ann_matrix, test_goids = setup.setup_sparse_annotations(opts.pos_neg_file_eval, set(goids), prots)
+        # Make sure the goids are the same before using it
+        num_ann_with_test = len(set(goids) & set(test_goids))
+        if num_ann_with_test != 0:
+            #print(test_goids)
+            print("WARNING: %d / %d goids in the annotation matrix are in the evaluation matrix" % (num_ann_with_test, len(goids)))
+            ann_goids_without_eval = set(goids) - set(test_goids)
+
+            print("\tremoving %d GO terms from the annotation matrix" % (len(ann_goids_without_eval)))
+            goids_to_remove = []
+            new_goids = []
+            for i, g in enumerate(goids):
+                if g in ann_goids_without_eval:
+                    goids_to_remove.append(i)
+                    continue
+                new_goids.append(g)
+            ann_matrix = alg_utils.delete_rows_csr(ann_matrix.tocsr(), goids_to_remove)
+            goids = new_goids
+
+        print("\tmatching the evaluation matrix to the annotation matrix")
+        test_goids2idx = {g: i for i, g in enumerate(test_goids)}
+        # slim down the evaluation matrix to have the same GO terms as the ann matrix
+        #matching_test_matrix = sparse.csr_matrix(ann_matrix.shape)
+        matching_test_matrix = sparse.lil_matrix(ann_matrix.shape)
+        for i, g in enumerate(tqdm(goids)):
+            matching_test_matrix[i] = test_ann_matrix[test_goids2idx[g]]
+        test_ann_matrix = matching_test_matrix.tocsr()
+        del matching_test_matrix
+    return opts, W, prots, ann_matrix, goids, test_ann_matrix
 
 
 if __name__ == "__main__":
-    run(sys.argv)
+    opts, W, prots, ann_matrix, goids, test_ann_matrix = run(sys.argv)
+    # TODO alpha doesn't change for all algorithms, just SS
+    main(opts.version, opts.exp_name, W, prots, ann_matrix, goids,
+         opts.algorithm, opts, taxons=opts.taxon,
+         eval_ann_matrix=test_ann_matrix)
+

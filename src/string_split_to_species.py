@@ -82,12 +82,12 @@ def parse_args(args):
             help="File containing interactions of all species downloaded from STRING. Will be split into each individual species. Default: %s." % (f_settings.STRING_FILE))
     parser.add_option('-o', '--out-dir', type='string', default=f_settings.STRING_TAXON_DIR,
             help="Directory to write the interactions of each species to. Default: %s." % (f_settings.STRING_TAXON_DIR))
-    parser.add_option('-S', '--score-cutoff', type='int', default=f_settings.STRING_CUTOFF,
-            help="Cutoff for the STRING interaction score. Default is 400 (medium). Useful to save on file space")
+    parser.add_option('-S', '--score-cutoff', type='int', default=400,
+            help="Cutoff for the STRING interaction score. Scores range from 150-1000. Default is 400 (medium). Useful to save on file space")
     parser.add_option('-s', '--selected-species', type='string', default=f_settings.SELECTED_STRAINS,
-            help="Uniprot reference proteome species to perform analyses on. Default: %s"% (f_settings.STRING_TO_UNIPROT))
-    parser.add_option('-u', '--map-to-uniprot', type='string', default=f_settings.STRING_TO_UNIPROT,
-            help="Also write the file formatted to use as input for GAIN. Default: %s" % (f_settings.STRING_TO_UNIPROT))
+            help="Uniprot reference proteome species to perform analyses on. Default: %s"% (f_settings.SELECTED_STRAINS))
+    #parser.add_option('-u', '--map-to-uniprot', type='string', default=f_settings.STRING_TO_UNIPROT,
+    #        help="Also write the file formatted to use as input for GAIN. Default: %s" % (f_settings.STRING_TO_UNIPROT))
 
     (opts, args) = parser.parse_args(args)
 
@@ -315,8 +315,8 @@ def split_string_to_species(species_to_split, string_file, out_dir, score_cutoff
     """
     *score_cutoff*: Only include lines with a combined score >= *score_cutoff*. 150 is the lowest for STRING
     """
-    if score_cutoff > 150:
-        print("\tonly including interactions with a combied score >= %d" % (score_cutoff))
+    #if score_cutoff > 150:
+    print("\tonly including interactions with a combied score >= %d" % (score_cutoff))
     # estimate the number of lines
     # takes too long (~20 minutes)
     #num_lines = rawgencount(string_file)
@@ -331,6 +331,8 @@ def split_string_to_species(species_to_split, string_file, out_dir, score_cutoff
         # TODO the file appears to be organized by species, so only have to open one output file for writing at a time
         # otherwise this would have to either sort the file, open multiple files for writing, or append to all files
         for line in tqdm(f, total=num_lines):
+            # needed for Python3
+            line = line.decode('UTF-8')
             score = int(line.rstrip().split(' ')[-1])
             # only write the interactions with a score >= the score cutoff
             if score_cutoff is not None and score < score_cutoff:
@@ -346,7 +348,7 @@ def split_string_to_species(species_to_split, string_file, out_dir, score_cutoff
                 # analagous to mkdir -p directory from the command line
                 if not os.path.isdir(out_dir):
                     os.makedirs(out_dir)
-                out_file = f_settings.STRING_TAXON_FILE % (species, species, score_cutoff)
+                out_file = f_settings.STRING_TAXON_FILE % (curr_species, curr_species, score_cutoff)
                 tqdm.write("Writing new species interactions to '%s'" % (out_file))
                 if last_species != "":
                     # close the last file we had open
@@ -363,7 +365,6 @@ def split_string_to_species(species_to_split, string_file, out_dir, score_cutoff
     out.close()
     print("Finished splitting species string interactions")
     return
-
 
 
 if __name__ == '__main__':

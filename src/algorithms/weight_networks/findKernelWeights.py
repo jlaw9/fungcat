@@ -112,7 +112,15 @@ def findKernelWeights(y, W):
     done = False if len(indices) > 0 else True
     while not done:
         # alpha = (K'*K)^-1 (K'*T)
-        alpha = np.linalg.solve(KtK, KtT)
+        try:
+            alpha = np.linalg.solve(KtK, KtT)
+        except np.linalg.linalg.LinAlgError as e:
+            # I get a singular matrix error once in a while. 
+            # I'm not sure why the matrix would be singular, but when that happens, just give the networks the same weight
+            print("Warning: np.linalg.linalg.LinAlgError in findKernelWeights.py.")
+            print(("Exception: %s" %(e)).rstrip())
+            indices = []
+            break
         #print(alpha)
         #sys.exit()
         # TODO check if any indices are Nan

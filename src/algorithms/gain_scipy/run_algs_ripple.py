@@ -25,6 +25,7 @@ import sinksource_ripple
 import sinksource_squeeze
 from aptrank.birgrank import birgRank
 import aptrank.run_birgrank as run_birgrank
+import ripple
 # only import aptrank if its being run
 # as it uses the cvx solver not installed on all machines
 #from aptrank.aptrank import AptRank
@@ -472,7 +473,7 @@ class Alg_Runner:
             goid_scores, params_results = self.run_ss_with_params(
                     alg, out_pref=out_pref)
         elif alg in ["sinksource-ripple", "sinksourceplus-ripple", 
-                'sinksource-squeeze', 'sinksourceplus-squeeze']:
+                     'sinksource-squeeze', 'sinksourceplus-squeeze', 'ripple']:
             goid_scores, params_results = self.run_topk_with_params(
                     alg, out_pref=out_pref)
                     #out_pref=out_pref, forced=forced)
@@ -749,9 +750,60 @@ class Alg_Runner:
             R, scores = ss_obj.runSinkSourceRipple() 
             process_time, update_time, iters, comp, len_N = ss_obj.get_stats()
             num_unk = ss_obj.P.shape[0]
+        elif alg in ['ripple']:
+            out_file = "outputs/%s/all/ripple/%s/times.tsv" % (self.version, self.exp_name)
+            print("writing to %s" % (out_file))
+            utils.checkDir(os.path.dirname(out_file))
+            out = open(out_file, 'a')
 
-        tqdm.write("\t%s converged after %d iterations " % (alg, iters) +
-                "(%0.4f sec) for goterm %s" % (process_time, goid))
+            s_list = [20, 100, 500, 1000]
+            t_list = [2, 5, 10, 20]
+
+            #queryNode = 50000
+            # these are the 20 nodes with the highest degrees
+            # run all pos and neg nodes for this GO term
+            #query_nodes = [36479, 37787, 12868, 42745, 48379, 41991, 11078, 25955, 35016, 35013, 28627, 59295, 55272, 47251, 33731, 28324, 57465, 45405, 48788, 19020]
+            #query_nodes = [query_nodes[0]]
+            query_nodes = list(positives) + list(negatives)
+            # keep track of the total time for all s and t combinations
+            total_time = 0
+            # as well as the time for the fastest combinations
+            min_time = 0
+            curr_min_time = 0 
+            total_tested = 0
+            for queryNode in tqdm(query_nodes):
+                for s in s_list:
+                    for t in t_list:
+                        curr_min_time = 10000
+                        ss_obj = ripple.Ripple(
+                                self.P, queryNode=queryNode, k=k, a=a, t=t, s=s, epsUB=epsUB, max_iters=self.max_iters,
+                                verbose=self.verbose)
+                        R, scores = ss_obj.runRipple() 
+                        #print(len(R))
+                        #if len(R) < 1000:
+                        #    print(R)
+                        process_time, update_time, iters, comp, len_N = ss_obj.get_stats()
+                        num_unk = ss_obj.P.shape[0]
+                        
+                        total_time += process_time
+                        total_tested += 1
+                        if process_time < curr_min_time:
+                            curr_min_time = process_time
+                            min_s_t = (s, t, iters, len_N, comp)
+
+                        tqdm.write("\t%s (%d, %d) converged after %d iterations " % (alg, s, t, iters) +
+                                "(%0.4f sec) for node %s" % (process_time, queryNode))
+                        # if any of the t values are > 100 sec, then they likely all values of t will for this s, so continue
+                        if process_time > 100:
+                            break
+                        #print(process_time, update_time, iters, len_N)
+                min_time += curr_min_time
+                tqdm.write("curr_min_time: %0.2f, min_s_t: %s\n" % (curr_min_time, str(min_s_t)))
+                out.write("%s\t%0.3f\t%s\n" % (queryNode, curr_min_time, '\t'.join([str(x) for x in list(min_s_t)])))
+            print("wrote to %s" % (out_file))
+            out.close()
+            print("total_time: %0.2f, total_test: %s" % (total_time, total_tested))
+            sys.exit()
 
         # also keep track of the time it takes for each of the parameter sets
         params_results["%s_process_time"%alg] = process_time
